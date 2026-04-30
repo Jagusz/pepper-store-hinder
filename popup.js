@@ -24,6 +24,24 @@ function setStatus(message, isWarning = false) {
   statusText.classList.toggle("warning", isWarning);
 }
 
+function isFirefoxAndroid() {
+  return typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+}
+
+function updateStorageStatus(syncAvailable) {
+  if (isFirefoxAndroid()) {
+    setStatus("Firefox Android: lista zapisana lokalnie na tym urządzeniu.");
+    return;
+  }
+
+  setStatus(
+    syncAvailable
+      ? "Lista synchronizowana przez Firefox Sync."
+      : "Firefox Sync niedostępny. Lista zapisana lokalnie.",
+    !syncAvailable
+  );
+}
+
 function mergeStoreLists(...storeLists) {
   const merged = [];
 
@@ -69,12 +87,7 @@ async function getHiddenStores() {
     ? localResult[STORAGE_KEY]
     : [];
 
-  setStatus(
-    syncAvailable
-      ? "Lista synchronizowana przez Firefox Sync."
-      : "Firefox Sync niedostępny. Lista zapisana lokalnie.",
-    !syncAvailable
-  );
+  updateStorageStatus(syncAvailable);
 
   return mergeStoreLists(syncedStores, localStores);
 }
@@ -93,13 +106,7 @@ async function saveHiddenStores(hiddenStores) {
   }
 
   await browser.storage.local.set({ [STORAGE_KEY]: normalizedStores });
-
-  setStatus(
-    syncAvailable
-      ? "Lista synchronizowana przez Firefox Sync."
-      : "Firefox Sync niedostępny. Lista zapisana lokalnie.",
-    !syncAvailable
-  );
+  updateStorageStatus(syncAvailable);
 
   return normalizedStores;
 }

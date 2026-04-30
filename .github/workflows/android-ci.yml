@@ -1,0 +1,42 @@
+name: Android CI
+
+on:
+  push:
+    branches:
+      - android
+  pull_request:
+    branches:
+      - android
+
+jobs:
+  validate-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check content script syntax
+        run: node --check content.js
+
+      - name: Check popup script syntax
+        run: node --check popup.js
+
+      - name: Check tests syntax
+        run: |
+          node --check tests/content.test.js
+          node --check tests/manifest-android.test.js
+
+      - name: Validate manifest JSON
+        run: node -e "JSON.parse(require('fs').readFileSync('manifest.json', 'utf8'))"
+
+      - name: Run content tests
+        run: node tests/content.test.js
+
+      - name: Run Android manifest tests
+        run: node tests/manifest-android.test.js

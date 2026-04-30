@@ -98,6 +98,26 @@ Testy sprawdzają między innymi:
 
 Te same testy są uruchamiane w GitHub Actions.
 
+## Firefox Android
+
+Branch `android` zawiera wariant przygotowany do testowania na Firefox for Android. W manifeście dodaje on:
+
+```json
+"browser_specific_settings": {
+  "gecko_android": {}
+}
+```
+
+Ten wpis sygnalizuje kompatybilność z Androidem przy publikacji lub podpisywaniu dodatku. Wersja androidowa nie zakłada synchronizacji filtrów przez konto Firefox, ponieważ Firefox Android nie synchronizuje danych `storage.sync` tak jak desktop. Lista filtrów działa lokalnie na urządzeniu dzięki `browser.storage.local`.
+
+Branch `android` ma osobny workflow:
+
+```text
+.github/workflows/android-ci.yml
+```
+
+Sprawdza on standardowe testy oraz dodatkowe warunki manifestu wymagane dla Androida.
+
 ## Pliki
 
 - `manifest.json` - konfiguracja dodatku Firefox Manifest V2.
