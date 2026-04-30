@@ -63,18 +63,24 @@ function loadContentScript() {
   return context;
 }
 
+// Verifies the exact store name stored by the user is cleaned without changing
+// its casing, so labels like "Media Expert" stay readable in the popup.
 test("normalizeStoreName trims and collapses whitespace", () => {
   const context = loadContentScript();
 
   assert.equal(context.normalizeStoreName("  Media   Expert  "), "Media Expert");
 });
 
+// Verifies comparisons use a lowercase, whitespace-normalized form, which lets
+// "Amazon.PL" and "amazon.pl" match the same hidden store.
 test("normalizeText lowercases and collapses whitespace", () => {
   const context = loadContentScript();
 
   assert.equal(context.normalizeText("  Amazon.PL  "), "amazon.pl");
 });
 
+// Verifies the extension can combine Firefox Sync and local fallback storage
+// without showing duplicate stores or losing entries from either source.
 test("mergeStoreLists removes duplicates case-insensitively", () => {
   const context = loadContentScript();
 
@@ -84,6 +90,8 @@ test("mergeStoreLists removes duplicates case-insensitively", () => {
   );
 });
 
+// Verifies the parser handles both normal JSON and HTML-escaped quotes, because
+// Pepper keeps thread data inside a data-vue3 attribute.
 test("parseJsonAttribute parses direct JSON and HTML encoded quotes", () => {
   const context = loadContentScript();
   const direct = '{"name":"ThreadMainListItemNormalizer"}';
@@ -99,6 +107,8 @@ test("parseJsonAttribute parses direct JSON and HTML encoded quotes", () => {
   );
 });
 
+// Verifies thread data can still be found if Pepper wraps props.thread inside
+// additional arrays or objects before rendering the listing item.
 test("findThreadData finds nested props.thread data", () => {
   const context = loadContentScript();
   const thread = {
@@ -122,6 +132,8 @@ test("findThreadData finds nested props.thread data", () => {
   );
 });
 
+// Verifies offers without props.thread.merchant are skipped, matching the
+// extension requirement to ignore listings that do not have merchant data.
 test("getNormalizerItems ignores offers without merchant", () => {
   const normalizer = {
     getAttribute: () =>
