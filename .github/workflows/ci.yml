@@ -23,5 +23,11 @@ jobs:
       - name: Check popup script syntax
         run: node --check popup.js
 
+      - name: Check tests syntax
+        run: node --check tests/content.test.js
+
       - name: Validate manifest JSON
         run: node -e "JSON.parse(require('fs').readFileSync('manifest.json', 'utf8'))"
+
+      - name: Run tests
+        run: node tests/content.test.js
