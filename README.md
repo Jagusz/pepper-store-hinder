@@ -78,6 +78,26 @@ localStorage.removeItem("pepperStoreFilterDebug")
 location.reload()
 ```
 
+## Testy
+
+Projekt ma lekkie testy oparte o wbudowany runner Node.js, bez zależności npm.
+
+Uruchomienie testów:
+
+```bash
+node tests/content.test.js
+```
+
+Testy sprawdzają między innymi:
+
+- normalizację nazw sklepów,
+- łączenie list zapisanych w Firefox Sync i local storage,
+- parsowanie danych `data-vue3`,
+- wyszukiwanie `props.thread`,
+- ignorowanie ofert bez `merchant`.
+
+Te same testy są uruchamiane w GitHub Actions.
+
 ## Pliki
 
 - `manifest.json` - konfiguracja dodatku Firefox Manifest V2.
