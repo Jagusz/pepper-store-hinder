@@ -1,0 +1,29 @@
+{
+  "manifest_version": 2,
+  "name": "Filtr sklepów dla Pepper.pl",
+  "version": "0.2.0",
+  "description": "Ukrywa oferty ze sklepów synchronizowanych przez konto Firefox na Pepper.pl.",
+  "permissions": [
+    "storage",
+    "https://www.pepper.pl/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.pepper.pl/*"
+      ],
+      "js": [
+        "content.js"
+      ]
+    }
+  ],
+  "browser_action": {
+    "default_title": "Filtr sklepów dla Pepper.pl",
+    "default_popup": "popup.html"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "filtr-sklepow-pepper@example.local"
+    }
+  }
+}
