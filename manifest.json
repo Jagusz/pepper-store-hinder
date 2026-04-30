@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "Filtr sklepów dla Pepper.pl",
   "version": "0.2.0",
-  "description": "Ukrywa oferty ze sklepów synchronizowanych przez konto Firefox na Pepper.pl.",
+  "description": "Nieoficjalne rozszerzenie do ukrywania ofert z wybranych sklepów na Pepper.pl. Lista filtrów może być synchronizowana przez Firefox Sync.",
   "permissions": [
     "storage",
     "https://www.pepper.pl/*"

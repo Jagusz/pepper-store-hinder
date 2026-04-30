@@ -27,14 +27,3 @@ test("manifest keeps a stable Gecko extension id", () => {
     "filtr-sklepow-pepper@example.local"
   );
 });
-
-// Verifies the manifest states that the extension does not collect or transmit
-// user data outside the extension, matching the privacy behavior of the code.
-test("manifest declares no data collection", () => {
-  const manifest = loadManifest();
-
-  assert.deepEqual(
-    manifest.browser_specific_settings.gecko.data_collection_permissions,
-    { required: ["none"] }
-  );
-});

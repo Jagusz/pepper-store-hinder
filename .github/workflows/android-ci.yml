@@ -30,13 +30,16 @@ jobs:
       - name: Check tests syntax
         run: |
           node --check tests/content.test.js
+          node --check tests/manifest.test.js
           node --check tests/manifest-android.test.js
 
       - name: Validate manifest JSON
         run: node -e "JSON.parse(require('fs').readFileSync('manifest.json', 'utf8'))"
 
       - name: Run content tests
-        run: node tests/content.test.js
+        run: |
+          node tests/content.test.js
+          node tests/manifest.test.js
 
       - name: Run Android manifest tests
         run: node tests/manifest-android.test.js
