@@ -643,6 +643,172 @@ test("setStoredHiddenStores writes only storage.local when Firefox Sync is disab
   assert.equal(JSON.stringify(stores), JSON.stringify(["Netto"]));
 });
 
+// Verifies turning filters off keeps filter buttons available but shows offers
+// that would otherwise match the hidden store list.
+test("refreshStateFromStorage shows hidden offers when filters are disabled", async () => {
+  const card = {
+    appendChild: () => {},
+    dataset: {
+      pepperStoreFilterHidden: "true"
+    },
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    style: {
+      display: "none"
+    }
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1274000",
+            type: "Deal",
+            merchant: {
+              merchantName: "Media Expert"
+            }
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement: createMockElement
+    },
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: ["Media Expert"] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return {
+                settings: {
+                  useFirefoxSync: true,
+                  alwaysFilterOnPageOpen: false,
+                  filtersEnabled: false
+                }
+              };
+            }
+
+            return { hiddenStores: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: () => {}
+        }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(card.style.display, "");
+  assert.equal(card.dataset.pepperStoreFilterHidden, undefined);
+});
+
+// Verifies the default-on page-opening option restores filtering when a new
+// content script instance starts after filters were disabled earlier.
+test("refreshStateFromStorage restores filters on page open when enabled", async () => {
+  const savedSettings = [];
+  const card = {
+    appendChild: () => {},
+    dataset: {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    style: {
+      display: ""
+    }
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1274001",
+            type: "Deal",
+            merchant: {
+              merchantName: "Media Expert"
+            }
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement: createMockElement
+    },
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: ["Media Expert"] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return {
+                settings: {
+                  useFirefoxSync: true,
+                  alwaysFilterOnPageOpen: true,
+                  filtersEnabled: false
+                }
+              };
+            }
+
+            return { hiddenStores: [] };
+          },
+          set: async (value) => {
+            if (Object.prototype.hasOwnProperty.call(value, "settings")) {
+              savedSettings.push(value.settings);
+            }
+          }
+        },
+        onChanged: {
+          addListener: () => {}
+        }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage(true);
+
+  assert.equal(card.style.display, "none");
+  assert.equal(card.dataset.pepperStoreFilterHidden, "true");
+  assert.equal(savedSettings.some((settings) => settings.filtersEnabled), true);
+});
+
 // Verifies dynamically loaded Pepper listings are handled through a body-level
 // MutationObserver watching added descendants.
 test("observePageChanges watches dynamically loaded offers", () => {

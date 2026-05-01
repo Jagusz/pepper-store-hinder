@@ -14,15 +14,29 @@
 }
 
 body {
-  min-width: 340px;
+  width: 340px;
+  max-width: 340px;
   margin: 0;
+  overflow: hidden;
   font: 14px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--pepper-text);
   background: var(--pepper-page);
 }
 
 main {
+  display: flex;
+  width: 340px;
+  max-height: 560px;
   padding: 14px;
+  overflow: hidden;
+}
+
+.popup-view {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  flex-direction: column;
 }
 
 header {
@@ -87,6 +101,8 @@ header span {
 }
 
 .settings-panel {
+  display: grid;
+  gap: 12px;
   padding: 10px 12px;
   border: 1px solid var(--pepper-border);
   border-radius: 8px;
@@ -192,6 +208,28 @@ button:disabled {
   background: #4b5563;
 }
 
+.filter-toggle {
+  margin-top: 12px;
+}
+
+.filter-toggle.is-off {
+  color: #fff;
+  border-color: #4b5563;
+  background: #4b5563;
+}
+
+.danger {
+  border-color: #c2410c;
+  color: #9a3412;
+  background: #fff7ed;
+}
+
+.danger:hover:not(:disabled) {
+  color: #fff;
+  border-color: #c2410c;
+  background: #c2410c;
+}
+
 .status {
   min-height: 17px;
   margin: 10px 2px 0;
@@ -206,14 +244,18 @@ button:disabled {
 ul {
   display: grid;
   gap: 8px;
+  min-height: 48px;
+  max-height: 220px;
   margin: 12px 0 0;
   padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   list-style: none;
 }
 
 li {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   padding: 9px 10px;
@@ -224,10 +266,11 @@ li {
 
 li span {
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
+  overflow-wrap: anywhere;
   font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 li button {
