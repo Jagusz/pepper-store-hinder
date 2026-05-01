@@ -554,6 +554,95 @@ test("getStoredHiddenStores falls back to storage.local when storage.sync fails"
   assert.equal(JSON.stringify(stores), JSON.stringify(["Netto"]));
 });
 
+// Verifies disabling Firefox Sync keeps filtering on this device only and does
+// not read the synced store list.
+test("getStoredHiddenStores uses only storage.local when Firefox Sync is disabled", async () => {
+  const calls = {
+    syncGet: 0,
+    localGet: 0
+  };
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => {
+            calls.syncGet += 1;
+            return { hiddenStores: ["Amazon.pl"] };
+          },
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            calls.localGet += 1;
+
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+
+            return { hiddenStores: ["ALDI"] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: () => {}
+        }
+      }
+    }
+  });
+
+  const stores = await context.getStoredHiddenStores();
+
+  assert.equal(calls.syncGet, 0);
+  assert.ok(calls.localGet > 0);
+  assert.equal(JSON.stringify(stores), JSON.stringify(["ALDI"]));
+});
+
+// Verifies stores added from the page are saved locally only when the user
+// turns Firefox Sync off in the popup.
+test("setStoredHiddenStores writes only storage.local when Firefox Sync is disabled", async () => {
+  const calls = {
+    syncSet: 0,
+    localSet: 0
+  };
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: [] }),
+          set: async () => {
+            calls.syncSet += 1;
+          }
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+
+            return { hiddenStores: [] };
+          },
+          set: async (value) => {
+            calls.localSet += 1;
+            assert.equal(
+              JSON.stringify(value),
+              JSON.stringify({ hiddenStores: ["Netto"] })
+            );
+          }
+        },
+        onChanged: {
+          addListener: () => {}
+        }
+      }
+    }
+  });
+
+  const stores = await context.setStoredHiddenStores(["Netto"]);
+
+  assert.equal(calls.syncSet, 0);
+  assert.equal(calls.localSet, 1);
+  assert.equal(JSON.stringify(stores), JSON.stringify(["Netto"]));
+});
+
 // Verifies dynamically loaded Pepper listings are handled through a body-level
 // MutationObserver watching added descendants.
 test("observePageChanges watches dynamically loaded offers", () => {

@@ -33,6 +33,10 @@ header {
   margin-bottom: 14px;
 }
 
+header > div {
+  min-width: 0;
+}
+
 h1 {
   margin: 0;
   font-size: 18px;
@@ -40,6 +44,8 @@ h1 {
 }
 
 header span {
+  display: inline-block;
+  margin-top: 4px;
   flex: 0 0 auto;
   padding: 3px 8px;
   border: 1px solid #ffd2b8;
@@ -48,6 +54,60 @@ header span {
   background: #fff3ec;
   font-size: 12px;
   font-weight: 700;
+}
+
+.icon-button {
+  display: grid;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  padding: 0;
+  border-color: var(--pepper-border);
+  color: var(--pepper-muted);
+  background: var(--pepper-surface);
+  box-shadow: none;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.icon-button:hover:not(:disabled),
+.icon-button[aria-expanded="true"] {
+  color: #fff;
+  border-color: #4b5563;
+  background: #4b5563;
+}
+
+.settings-panel {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--pepper-border);
+  border-radius: 8px;
+  background: var(--pepper-surface);
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  font-weight: 700;
+}
+
+.checkbox-row input {
+  flex: 0 0 auto;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0;
+  accent-color: var(--pepper-orange);
+}
+
+.checkbox-row small {
+  display: block;
+  color: var(--pepper-muted);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 form {
