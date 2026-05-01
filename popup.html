@@ -9,9 +9,26 @@
   <body>
     <main>
       <header>
-        <h1>Deal Store Filter</h1>
-        <span>Firefox Sync</span>
+        <div>
+          <h1>Deal Store Filter</h1>
+          <span>Firefox Sync</span>
+        </div>
+        <button
+          id="settings-toggle"
+          class="icon-button"
+          type="button"
+          aria-expanded="false"
+          aria-controls="settings-panel"
+          title="Settings"
+        >&#9881;</button>
       </header>
+
+      <section id="settings-panel" class="settings-panel" hidden>
+        <label class="checkbox-row" for="use-firefox-sync">
+          <input id="use-firefox-sync" type="checkbox">
+          <span>Firefox Sync <small>(requires Firefox account)</small></span>
+        </label>
+      </section>
 
       <form id="store-form">
         <label for="store-name">Store to hide</label>

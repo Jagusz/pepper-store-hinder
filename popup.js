@@ -1,10 +1,17 @@
 const STORAGE_KEY = "hiddenStores";
+const SETTINGS_KEY = "settings";
+const DEFAULT_SETTINGS = {
+  useFirefoxSync: true
+};
 
 const form = document.querySelector("#store-form");
 const input = document.querySelector("#store-name");
 const list = document.querySelector("#store-list");
 const clearButton = document.querySelector("#clear-stores");
 const statusText = document.querySelector("#storage-status");
+const settingsToggle = document.querySelector("#settings-toggle");
+const settingsPanel = document.querySelector("#settings-panel");
+const syncCheckbox = document.querySelector("#use-firefox-sync");
 
 function normalizeText(value) {
   return String(value || "")
@@ -24,10 +31,40 @@ function setStatus(message, isWarning = false) {
   statusText.classList.toggle("warning", isWarning);
 }
 
-function updateStorageStatus(syncAvailable) {
+function normalizeSettings(value) {
+  return {
+    useFirefoxSync: value?.useFirefoxSync !== false
+  };
+}
+
+async function getSettings() {
+  const result = await browser.storage.local.get({
+    [SETTINGS_KEY]: DEFAULT_SETTINGS
+  });
+
+  return normalizeSettings(result[SETTINGS_KEY]);
+}
+
+async function saveSettings(settings) {
+  const normalizedSettings = normalizeSettings(settings);
+
+  await browser.storage.local.set({ [SETTINGS_KEY]: normalizedSettings });
+  return normalizedSettings;
+}
+
+function updateSettingsUi(settings) {
+  syncCheckbox.checked = settings.useFirefoxSync;
+}
+
+function updateStorageStatus(syncAvailable, settings) {
+  if (!settings.useFirefoxSync) {
+    setStatus("Firefox Sync disabled. List saved locally.");
+    return;
+  }
+
   setStatus(
     syncAvailable
-      ? "List saved in Firefox Sync."
+      ? "List saved with Firefox Sync and local backup."
       : "Firefox Sync unavailable. List saved locally as a fallback.",
     !syncAvailable
   );
@@ -56,12 +93,12 @@ function mergeStoreLists(...storeLists) {
   return merged.sort((a, b) => a.localeCompare(b, "pl"));
 }
 
-async function getHiddenStores() {
+async function getHiddenStores(settings) {
   let syncedStores = [];
   let localStores = [];
   let syncAvailable = false;
 
-  if (browser.storage.sync) {
+  if (settings.useFirefoxSync && browser.storage.sync) {
     try {
       const syncResult = await browser.storage.sync.get({ [STORAGE_KEY]: [] });
       syncedStores = Array.isArray(syncResult[STORAGE_KEY])
@@ -78,16 +115,18 @@ async function getHiddenStores() {
     ? localResult[STORAGE_KEY]
     : [];
 
-  updateStorageStatus(syncAvailable);
+  updateStorageStatus(syncAvailable, settings);
 
-  return mergeStoreLists(syncedStores, localStores);
+  return settings.useFirefoxSync
+    ? mergeStoreLists(syncedStores, localStores)
+    : mergeStoreLists(localStores);
 }
 
-async function saveHiddenStores(hiddenStores) {
+async function saveHiddenStores(hiddenStores, settings) {
   const normalizedStores = mergeStoreLists(hiddenStores);
   let syncAvailable = false;
 
-  if (browser.storage.sync) {
+  if (settings.useFirefoxSync && browser.storage.sync) {
     try {
       await browser.storage.sync.set({ [STORAGE_KEY]: normalizedStores });
       syncAvailable = true;
@@ -97,7 +136,7 @@ async function saveHiddenStores(hiddenStores) {
   }
 
   await browser.storage.local.set({ [STORAGE_KEY]: normalizedStores });
-  updateStorageStatus(syncAvailable);
+  updateStorageStatus(syncAvailable, settings);
 
   return normalizedStores;
 }
@@ -124,7 +163,8 @@ function renderStores(hiddenStores) {
     removeButton.textContent = "Remove";
     removeButton.addEventListener("click", async () => {
       const nextStores = hiddenStores.filter((_, itemIndex) => itemIndex !== index);
-      renderStores(await saveHiddenStores(nextStores));
+      const settings = await getSettings();
+      renderStores(await saveHiddenStores(nextStores, settings));
     });
 
     item.append(name, removeButton);
@@ -142,7 +182,8 @@ form.addEventListener("submit", async (event) => {
   }
 
   try {
-    const hiddenStores = await getHiddenStores();
+    const settings = await getSettings();
+    const hiddenStores = await getHiddenStores(settings);
     const alreadyExists = hiddenStores.some((store) => {
       return normalizeText(store) === normalizeText(cleanedStore);
     });
@@ -151,7 +192,7 @@ form.addEventListener("submit", async (event) => {
       ? hiddenStores
       : [...hiddenStores, cleanedStore];
 
-    renderStores(await saveHiddenStores(nextStores));
+    renderStores(await saveHiddenStores(nextStores, settings));
     input.value = "";
   } catch (error) {
     console.error("[Deal Store Filter] Failed to save filter", error);
@@ -160,19 +201,47 @@ form.addEventListener("submit", async (event) => {
 });
 
 clearButton.addEventListener("click", async () => {
-  renderStores(await saveHiddenStores([]));
+  const settings = await getSettings();
+
+  renderStores(await saveHiddenStores([], settings));
 });
 
+settingsToggle.addEventListener("click", () => {
+  const isExpanded = settingsToggle.getAttribute("aria-expanded") === "true";
+
+  settingsToggle.setAttribute("aria-expanded", String(!isExpanded));
+  settingsPanel.hidden = isExpanded;
+});
+
+syncCheckbox.addEventListener("change", async () => {
+  const settings = await saveSettings({
+    useFirefoxSync: syncCheckbox.checked
+  });
+
+  updateSettingsUi(settings);
+  renderStores(await getHiddenStores(settings));
+});
+
+async function refreshPopup() {
+  const settings = await getSettings();
+
+  updateSettingsUi(settings);
+  renderStores(await getHiddenStores(settings));
+}
+
 browser.storage.onChanged.addListener((changes, areaName) => {
-  if (!["sync", "local"].includes(areaName) || !changes[STORAGE_KEY]) {
+  const storageChanged =
+    ["sync", "local"].includes(areaName) && Boolean(changes[STORAGE_KEY]);
+  const settingsChanged = areaName === "local" && Boolean(changes[SETTINGS_KEY]);
+
+  if (!storageChanged && !settingsChanged) {
     return;
   }
 
-  getHiddenStores().then(renderStores);
+  refreshPopup();
 });
 
-getHiddenStores()
-  .then(renderStores)
+refreshPopup()
   .catch((error) => {
     console.error("[Deal Store Filter] Failed to read filters", error);
     setStatus("Failed to read filters. Check the popup console.", true);

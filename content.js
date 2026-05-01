@@ -1,10 +1,14 @@
 const STORAGE_KEY = "hiddenStores";
+const SETTINGS_KEY = "settings";
 const HIDDEN_KEY = "pepperStoreFilterHidden";
 const NORMALIZER_SELECTOR = '[data-vue3*="ThreadMainListItemNormalizer"]';
 const CARD_SELECTOR = 'article[id^="thread_"], article.thread, [data-t="thread"]';
 const BUTTON_SELECTOR = ".pepper-store-filter-button";
 const DEBUG_STORAGE_KEY = "pepperStoreFilterDebug";
 const DEBUG_QUERY_PARAM = "pshdebug";
+const DEFAULT_SETTINGS = {
+  useFirefoxSync: true
+};
 
 let hiddenStores = [];
 let lastDebugSignature = "";
@@ -78,11 +82,26 @@ function mergeStoreLists(...storeLists) {
   return merged.sort((a, b) => a.localeCompare(b, "pl"));
 }
 
+function normalizeSettings(value) {
+  return {
+    useFirefoxSync: value?.useFirefoxSync !== false
+  };
+}
+
+async function getSettings() {
+  const result = await browser.storage.local.get({
+    [SETTINGS_KEY]: DEFAULT_SETTINGS
+  });
+
+  return normalizeSettings(result[SETTINGS_KEY]);
+}
+
 async function getStoredHiddenStores() {
+  const settings = await getSettings();
   let syncedStores = [];
   let localStores = [];
 
-  if (browser.storage.sync) {
+  if (settings.useFirefoxSync && browser.storage.sync) {
     try {
       const syncResult = await browser.storage.sync.get({ [STORAGE_KEY]: [] });
       syncedStores = Array.isArray(syncResult[STORAGE_KEY])
@@ -98,13 +117,16 @@ async function getStoredHiddenStores() {
     ? localResult[STORAGE_KEY]
     : [];
 
-  return mergeStoreLists(syncedStores, localStores);
+  return settings.useFirefoxSync
+    ? mergeStoreLists(syncedStores, localStores)
+    : mergeStoreLists(localStores);
 }
 
 async function setStoredHiddenStores(stores) {
+  const settings = await getSettings();
   const normalizedStores = mergeStoreLists(stores);
 
-  if (browser.storage.sync) {
+  if (settings.useFirefoxSync && browser.storage.sync) {
     try {
       await browser.storage.sync.set({ [STORAGE_KEY]: normalizedStores });
     } catch (error) {
@@ -514,7 +536,11 @@ function observePageChanges() {
 }
 
 browser.storage.onChanged.addListener((changes, areaName) => {
-  if (!["sync", "local"].includes(areaName) || !changes[STORAGE_KEY]) {
+  const storesChanged =
+    ["sync", "local"].includes(areaName) && Boolean(changes[STORAGE_KEY]);
+  const settingsChanged = areaName === "local" && Boolean(changes[SETTINGS_KEY]);
+
+  if (!storesChanged && !settingsChanged) {
     return;
   }
 
