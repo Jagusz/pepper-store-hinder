@@ -7,10 +7,13 @@ const BUTTON_SELECTOR = ".pepper-store-filter-button";
 const DEBUG_STORAGE_KEY = "pepperStoreFilterDebug";
 const DEBUG_QUERY_PARAM = "pshdebug";
 const DEFAULT_SETTINGS = {
-  useFirefoxSync: true
+  useFirefoxSync: true,
+  alwaysFilterOnPageOpen: true,
+  filtersEnabled: true
 };
 
 let hiddenStores = [];
+let filtersEnabled = true;
 let lastDebugSignature = "";
 let applyFiltersTimer = null;
 
@@ -94,7 +97,9 @@ async function updateLocalCache(stores) {
 
 function normalizeSettings(value) {
   return {
-    useFirefoxSync: value?.useFirefoxSync !== false
+    useFirefoxSync: value?.useFirefoxSync !== false,
+    alwaysFilterOnPageOpen: value?.alwaysFilterOnPageOpen !== false,
+    filtersEnabled: value?.filtersEnabled !== false
   };
 }
 
@@ -106,10 +111,17 @@ async function getSettings() {
   return normalizeSettings(result[SETTINGS_KEY]);
 }
 
-async function getStoredHiddenStores() {
-  const settings = await getSettings();
+async function saveSettings(settings) {
+  const normalizedSettings = normalizeSettings(settings);
 
-  if (settings.useFirefoxSync && browser.storage.sync) {
+  await browser.storage.local.set({ [SETTINGS_KEY]: normalizedSettings });
+  return normalizedSettings;
+}
+
+async function getStoredHiddenStores(settings = null) {
+  const activeSettings = settings || await getSettings();
+
+  if (activeSettings.useFirefoxSync && browser.storage.sync) {
     try {
       const syncResult = await browser.storage.sync.get({ [STORAGE_KEY]: [] });
       const syncedStores = mergeStoreLists(syncResult[STORAGE_KEY]);
@@ -418,6 +430,11 @@ function applyFilters() {
       addedButtonsCount += 1;
     }
 
+    if (!filtersEnabled) {
+      showCard(item.card);
+      continue;
+    }
+
     if (isStoreHidden(item.merchant.name)) {
       hideCard(item.card);
       hiddenCount += 1;
@@ -430,6 +447,7 @@ function applyFilters() {
   const debugSignature = JSON.stringify({
     items: items.length,
     hidden: hiddenCount,
+    filtersEnabled,
     stores: hiddenStores,
     merchants: merchantNames.slice(0, 10)
   });
@@ -441,6 +459,7 @@ function applyFilters() {
       offersWithMerchant: items.length,
       addedButtons: addedButtonsCount,
       hiddenOffers: hiddenCount,
+      filtersEnabled,
       hiddenStores,
       sampleMerchants: merchantNames.slice(0, 10)
     });
@@ -505,14 +524,28 @@ function injectStyles() {
   document.documentElement.appendChild(style);
 }
 
+async function refreshStateFromStorage(resetFiltersForPage = false) {
+  let settings = await getSettings();
+
+  if (resetFiltersForPage && settings.alwaysFilterOnPageOpen && !settings.filtersEnabled) {
+    settings = await saveSettings({
+      ...settings,
+      filtersEnabled: true
+    });
+  }
+
+  filtersEnabled = settings.filtersEnabled;
+  hiddenStores = await getStoredHiddenStores(settings);
+  applyFilters();
+}
+
 async function loadHiddenStores() {
   debugLog("Content script loaded", {
     url: window.location.href,
     normalizers: document.querySelectorAll(NORMALIZER_SELECTOR).length
   });
 
-  hiddenStores = await getStoredHiddenStores();
-  applyFilters();
+  await refreshStateFromStorage(true);
 }
 
 function observePageChanges() {
@@ -548,10 +581,11 @@ browser.storage.onChanged.addListener((changes, areaName) => {
     return;
   }
 
-  getStoredHiddenStores().then((stores) => {
-    hiddenStores = stores;
-    debugLog("Hidden store list changed", hiddenStores);
-    applyFilters();
+  refreshStateFromStorage().then(() => {
+    debugLog("Filter state changed", {
+      filtersEnabled,
+      hiddenStores
+    });
   });
 });
 

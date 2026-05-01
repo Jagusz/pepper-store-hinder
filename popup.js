@@ -1,7 +1,9 @@
 const STORAGE_KEY = "hiddenStores";
 const SETTINGS_KEY = "settings";
 const DEFAULT_SETTINGS = {
-  useFirefoxSync: true
+  useFirefoxSync: true,
+  alwaysFilterOnPageOpen: true,
+  filtersEnabled: true
 };
 
 const form = document.querySelector("#store-form");
@@ -9,11 +11,13 @@ const input = document.querySelector("#store-name");
 const list = document.querySelector("#store-list");
 const clearButton = document.querySelector("#clear-stores");
 const statusText = document.querySelector("#storage-status");
+const filterToggleButton = document.querySelector("#toggle-filters");
 const mainView = document.querySelector("#main-view");
 const settingsToggle = document.querySelector("#settings-toggle");
 const settingsBack = document.querySelector("#settings-back");
 const settingsView = document.querySelector("#settings-view");
 const syncCheckbox = document.querySelector("#use-firefox-sync");
+const alwaysFilterCheckbox = document.querySelector("#always-filter-on-open");
 
 function normalizeText(value) {
   return String(value || "")
@@ -35,7 +39,9 @@ function setStatus(message, isWarning = false) {
 
 function normalizeSettings(value) {
   return {
-    useFirefoxSync: value?.useFirefoxSync !== false
+    useFirefoxSync: value?.useFirefoxSync !== false,
+    alwaysFilterOnPageOpen: value?.alwaysFilterOnPageOpen !== false,
+    filtersEnabled: value?.filtersEnabled !== false
   };
 }
 
@@ -56,9 +62,23 @@ async function saveSettings(settings) {
 
 function updateSettingsUi(settings) {
   syncCheckbox.checked = settings.useFirefoxSync;
+  alwaysFilterCheckbox.checked = settings.alwaysFilterOnPageOpen;
+  filterToggleButton.textContent = settings.filtersEnabled
+    ? "Disable filters"
+    : "Enable filters";
+  filterToggleButton.classList.toggle("is-off", !settings.filtersEnabled);
+  filterToggleButton.setAttribute(
+    "aria-pressed",
+    String(!settings.filtersEnabled)
+  );
 }
 
 function updateStorageStatus(syncAvailable, settings) {
+  if (!settings.filtersEnabled) {
+    setStatus("Filters disabled. Matching deals are currently visible.");
+    return;
+  }
+
   if (!settings.useFirefoxSync) {
     setStatus("Firefox Sync disabled. List saved locally.");
     return;
@@ -216,6 +236,14 @@ form.addEventListener("submit", async (event) => {
 });
 
 clearButton.addEventListener("click", async () => {
+  const shouldClearStores = window.confirm(
+    "Do you want to clear the hidden store list?"
+  );
+
+  if (!shouldClearStores) {
+    return;
+  }
+
   const settings = await getSettings();
 
   renderStores(await saveHiddenStores([], settings));
@@ -226,8 +254,32 @@ settingsToggle.addEventListener("click", showSettingsView);
 settingsBack.addEventListener("click", showMainView);
 
 syncCheckbox.addEventListener("change", async () => {
+  const currentSettings = await getSettings();
   const settings = await saveSettings({
+    ...currentSettings,
     useFirefoxSync: syncCheckbox.checked
+  });
+
+  updateSettingsUi(settings);
+  renderStores(await getHiddenStores(settings));
+});
+
+alwaysFilterCheckbox.addEventListener("change", async () => {
+  const currentSettings = await getSettings();
+  const settings = await saveSettings({
+    ...currentSettings,
+    alwaysFilterOnPageOpen: alwaysFilterCheckbox.checked
+  });
+
+  updateSettingsUi(settings);
+  renderStores(await getHiddenStores(settings));
+});
+
+filterToggleButton.addEventListener("click", async () => {
+  const currentSettings = await getSettings();
+  const settings = await saveSettings({
+    ...currentSettings,
+    filtersEnabled: !currentSettings.filtersEnabled
   });
 
   updateSettingsUi(settings);

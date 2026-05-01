@@ -31,9 +31,9 @@
           </div>
         </form>
 
-        <button id="clear-stores" class="secondary" type="button">Clear list</button>
         <p id="storage-status" class="status" role="status"></p>
         <ul id="store-list"></ul>
+        <button id="toggle-filters" class="secondary filter-toggle" type="button"></button>
       </section>
 
       <section id="settings-view" class="popup-view" hidden>
@@ -52,7 +52,12 @@
             <input id="use-firefox-sync" type="checkbox">
             <span>Firefox Sync <small>(requires Firefox account)</small></span>
           </label>
+          <label class="checkbox-row" for="always-filter-on-open">
+            <input id="always-filter-on-open" type="checkbox">
+            <span>Always filter when opening a page</span>
+          </label>
         </div>
+        <button id="clear-stores" class="secondary danger" type="button">Clear list</button>
       </section>
     </main>
 
