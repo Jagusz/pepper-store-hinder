@@ -3,7 +3,8 @@ const SETTINGS_KEY = "settings";
 const DEFAULT_SETTINGS = {
   useFirefoxSync: true,
   alwaysFilterOnPageOpen: true,
-  filtersEnabled: true
+  filtersEnabled: true,
+  showFilteredAsDimmed: false
 };
 
 const form = document.querySelector("#store-form");
@@ -18,6 +19,7 @@ const settingsBack = document.querySelector("#settings-back");
 const settingsView = document.querySelector("#settings-view");
 const syncCheckbox = document.querySelector("#use-firefox-sync");
 const alwaysFilterCheckbox = document.querySelector("#always-filter-on-open");
+const dimmedCheckbox = document.querySelector("#show-filtered-as-dimmed");
 
 function normalizeText(value) {
   return String(value || "")
@@ -41,7 +43,8 @@ function normalizeSettings(value) {
   return {
     useFirefoxSync: value?.useFirefoxSync !== false,
     alwaysFilterOnPageOpen: value?.alwaysFilterOnPageOpen !== false,
-    filtersEnabled: value?.filtersEnabled !== false
+    filtersEnabled: value?.filtersEnabled !== false,
+    showFilteredAsDimmed: value?.showFilteredAsDimmed === true
   };
 }
 
@@ -63,6 +66,7 @@ async function saveSettings(settings) {
 function updateSettingsUi(settings) {
   syncCheckbox.checked = settings.useFirefoxSync;
   alwaysFilterCheckbox.checked = settings.alwaysFilterOnPageOpen;
+  dimmedCheckbox.checked = settings.showFilteredAsDimmed;
   filterToggleButton.textContent = settings.filtersEnabled
     ? "Disable filters"
     : "Enable filters";
@@ -90,6 +94,30 @@ function updateStorageStatus(syncAvailable, settings) {
       : "Firefox Sync unavailable. List saved locally as a fallback.",
     !syncAvailable
   );
+}
+
+async function refreshActiveTabFilters() {
+  if (!browser.tabs?.query || !browser.tabs?.sendMessage) {
+    return;
+  }
+
+  try {
+    const tabs = await browser.tabs.query({
+      active: true,
+      currentWindow: true
+    });
+    const activeTab = tabs[0];
+
+    if (activeTab?.id === undefined) {
+      return;
+    }
+
+    await browser.tabs.sendMessage(activeTab.id, {
+      type: "dealStoreFilterRefresh"
+    });
+  } catch {
+    // The active tab may be unsupported or may not have the content script.
+  }
 }
 
 function showMainView() {
@@ -172,6 +200,7 @@ async function saveHiddenStores(hiddenStores, settings) {
 
   await browser.storage.local.set({ [STORAGE_KEY]: normalizedStores });
   updateStorageStatus(syncAvailable, settings);
+  await refreshActiveTabFilters();
 
   return normalizedStores;
 }
@@ -262,6 +291,7 @@ syncCheckbox.addEventListener("change", async () => {
 
   updateSettingsUi(settings);
   renderStores(await getHiddenStores(settings));
+  await refreshActiveTabFilters();
 });
 
 alwaysFilterCheckbox.addEventListener("change", async () => {
@@ -273,6 +303,19 @@ alwaysFilterCheckbox.addEventListener("change", async () => {
 
   updateSettingsUi(settings);
   renderStores(await getHiddenStores(settings));
+  await refreshActiveTabFilters();
+});
+
+dimmedCheckbox.addEventListener("change", async () => {
+  const currentSettings = await getSettings();
+  const settings = await saveSettings({
+    ...currentSettings,
+    showFilteredAsDimmed: dimmedCheckbox.checked
+  });
+
+  updateSettingsUi(settings);
+  renderStores(await getHiddenStores(settings));
+  await refreshActiveTabFilters();
 });
 
 filterToggleButton.addEventListener("click", async () => {
@@ -284,6 +327,7 @@ filterToggleButton.addEventListener("click", async () => {
 
   updateSettingsUi(settings);
   renderStores(await getHiddenStores(settings));
+  await refreshActiveTabFilters();
 });
 
 async function refreshPopup() {
