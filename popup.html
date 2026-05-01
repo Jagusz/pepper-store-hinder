@@ -1,27 +1,27 @@
 <!doctype html>
-<html lang="pl">
+<html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Filtr sklepów dla Pepper.pl</title>
+    <title>Deal Store Filter</title>
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
     <main>
       <header>
-        <h1>Filtr sklepów</h1>
+        <h1>Deal Store Filter</h1>
         <span>Firefox Sync</span>
       </header>
 
       <form id="store-form">
-        <label for="store-name">Sklep do ukrycia</label>
+        <label for="store-name">Store to hide</label>
         <div class="input-row">
           <input id="store-name" name="store-name" type="text" autocomplete="off" required>
-          <button type="submit">Dodaj</button>
+          <button type="submit">Add</button>
         </div>
       </form>
 
-      <button id="clear-stores" class="secondary" type="button">Wyczyść listę</button>
+      <button id="clear-stores" class="secondary" type="button">Clear list</button>
       <p id="storage-status" class="status" role="status"></p>
       <ul id="store-list"></ul>
     </main>

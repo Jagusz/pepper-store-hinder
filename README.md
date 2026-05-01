@@ -1,18 +1,18 @@
-# Filtr sklepów dla Pepper.pl
+# Deal Store Filter
 
 [English version](README.en.md)
 
-Nieoficjalne rozszerzenie do Firefoksa, które pozwala ukrywać oferty z wybranych sklepów na Pepper.pl.
+Nieoficjalne rozszerzenie do Firefoksa, które pozwala ukrywać oferty z wybranych sklepów na obsługiwanych stronach z promocjami.
 
-Rozszerzenie nie jest tworzone, wspierane ani zatwierdzone przez Pepper.pl.
+Obecna wersja działa na Pepper.pl. Rozszerzenie nie jest tworzone, wspierane ani zatwierdzone przez Pepper.pl.
 
 ## Funkcje
 
-- Działa na stronach `https://www.pepper.pl/*`.
+- Działa obecnie na stronach `https://www.pepper.pl/*`.
 - Dodaje przy ofertach przycisk `Filtruj sklep: Nazwa sklepu`.
 - Ukrywa oferty ze sklepów zapisanych na liście filtrów.
 - Działa na listach ofert oraz na stronach pojedynczych okazji.
-- Odczytuje sklep z danych `data-vue3`, jeśli Pepper.pl udostępnia je w komponencie oferty.
+- Odczytuje sklep z danych `data-vue3`, jeśli obsługiwana strona udostępnia je w komponencie oferty.
 - Używa `props.thread.merchant.merchantName` jako głównej nazwy sklepu.
 - Gdy `merchant` jest pusty, używa `props.thread.linkHost`, np. `www.facebook.com` -> `facebook.com`.
 - Gdy dane strukturalne nie są dostępne, próbuje odczytać sklep z widocznego tekstu oferty, m.in. z etykiet `Dostępne w` i `Zrealizuj na`.
@@ -21,7 +21,7 @@ Rozszerzenie nie jest tworzone, wspierane ani zatwierdzone przez Pepper.pl.
 
 ## Jak działa
 
-Na listach ofert rozszerzenie najpierw odczytuje dane osadzone przez Pepper.pl w atrybucie `data-vue3`:
+Na listach ofert rozszerzenie najpierw odczytuje dane osadzone przez obsługiwaną stronę w atrybucie `data-vue3`:
 
 ```text
 props.thread.merchant.merchantName
@@ -40,7 +40,7 @@ Dostępne w Nazwa sklepu
 Zrealizuj na Nazwa sklepu
 ```
 
-Fallback tekstowy czyści też doklejone etykiety Pepper.pl, przyciski CTA i kody kuponów, aby przycisk nie dostał nazwy w stylu `FlaconiSPRINGTIMEPobierz kod`.
+Fallback tekstowy czyści też doklejone etykiety strony, przyciski CTA i kody kuponów, aby przycisk nie dostał nazwy w stylu `FlaconiSPRINGTIMEPobierz kod`.
 
 Jeśli uda się ustalić sklep, rozszerzenie dodaje przy ofercie przycisk:
 
@@ -50,7 +50,7 @@ Filtruj sklep: Nazwa sklepu
 
 Kliknięcie przycisku prosi o potwierdzenie, zapisuje sklep na liście filtrów i ukrywa wszystkie oferty z tym samym sklepem.
 
-Nazwy sklepów najlepiej dodawać dokładnie tak, jak występują na Pepper.pl, np. `Amazon.pl`, `Media Expert`, `ALDI`.
+Nazwy sklepów najlepiej dodawać dokładnie tak, jak występują na obsługiwanej stronie, np. `Amazon.pl`, `Media Expert`, `ALDI`.
 
 ## Prywatność
 
@@ -86,7 +86,7 @@ Kopia w `browser.storage.local` jest utrzymywana tylko po to, aby zwiększyć od
 3. Wybierz plik `manifest.json` z katalogu rozszerzenia.
 4. Otwórz `https://www.pepper.pl/`.
 
-Po zmianach w plikach kliknij `Reload` przy dodatku w `about:debugging`, a potem odśwież kartę Pepper.pl.
+Po zmianach w plikach kliknij `Reload` przy dodatku w `about:debugging`, a potem odśwież kartę obsługiwanej strony.
 
 ## Publikacja / pakowanie ZIP
 
@@ -101,7 +101,7 @@ Na Windows można użyć skryptu:
 Skrypt tworzy plik:
 
 ```text
-dist/filtr-sklepow-dla-pepper-0.1.0.zip
+dist/deal-store-filter-0.1.0.zip
 ```
 
 ZIP zawiera tylko pliki potrzebne do działania dodatku:
@@ -116,13 +116,13 @@ Do paczki nie trafiają katalogi `.git`, `.github`, `tests`, `node_modules`, `di
 
 ## Nieoficjalny charakter dodatku
 
-Filtr sklepów dla Pepper.pl jest projektem niezależnym.
+Deal Store Filter jest projektem niezależnym.
 
-Rozszerzenie nie jest tworzone, wspierane ani zatwierdzone przez Pepper.pl. Nazwa Pepper.pl jest używana wyłącznie do wskazania strony, na której działa dodatek.
+Rozszerzenie nie jest tworzone, wspierane ani zatwierdzone przez Pepper.pl. Nazwa Pepper.pl jest używana wyłącznie do wskazania aktualnie obsługiwanej strony.
 
 ## Debugowanie
 
-Na stronie Pepper.pl można włączyć logi debugowe w konsoli:
+Na obsługiwanej stronie można włączyć logi debugowe w konsoli:
 
 ```js
 localStorage.setItem("pepperStoreFilterDebug", "1")
@@ -132,7 +132,7 @@ location.reload()
 Po odświeżeniu w konsoli pojawią się wpisy zaczynające się od:
 
 ```text
-[Filtr sklepów Pepper]
+[Deal Store Filter]
 ```
 
 Żeby wyłączyć logi:
@@ -186,7 +186,7 @@ Te same testy są uruchamiane w GitHub Actions.
 ## Pliki
 
 - `manifest.json` - konfiguracja dodatku Firefox Manifest V2.
-- `content.js` - logika działająca na Pepper.pl.
+- `content.js` - logika działająca na obsługiwanych stronach.
 - `popup.html` - HTML popupu.
 - `popup.js` - logika popupu i zarządzania listą sklepów.
 - `popup.css` - style popupu.

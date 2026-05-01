@@ -28,9 +28,9 @@ function debugLog(message, data) {
   }
 
   if (data === undefined) {
-    console.log(`[Filtr sklepów Pepper] ${message}`);
+    console.log(`[Deal Store Filter] ${message}`);
   } else {
-    console.log(`[Filtr sklepów Pepper] ${message}`, data);
+    console.log(`[Deal Store Filter] ${message}`, data);
   }
 }
 
@@ -97,7 +97,7 @@ async function getStoredHiddenStores() {
       await updateLocalCache(syncedStores);
       return syncedStores;
     } catch (error) {
-      debugLog("Firefox Sync niedostępny podczas odczytu", error);
+      debugLog("Firefox Sync unavailable while reading filters", error);
     }
   }
 
@@ -113,7 +113,7 @@ async function setStoredHiddenStores(stores) {
     try {
       await browser.storage.sync.set({ [STORAGE_KEY]: normalizedStores });
     } catch (error) {
-      debugLog("Firefox Sync niedostępny podczas zapisu", error);
+      debugLog("Firefox Sync unavailable while saving filters", error);
     }
   }
 
@@ -135,7 +135,7 @@ function parseJsonAttribute(value) {
     try {
       return JSON.parse(candidate);
     } catch {
-      debugLog("Nie udało się sparsować wariantu data-vue3.");
+      debugLog("Failed to parse a data-vue3 variant.");
     }
   }
 
@@ -346,7 +346,7 @@ function createFilterButton(merchant) {
     event.stopImmediatePropagation();
 
     const shouldAddStore = window.confirm(
-      `Czy chcesz dodać sklep ${merchant.name} do filtrowanych?`
+      `Do you want to add ${merchant.name} to the filtered stores?`
     );
 
     if (!shouldAddStore) {
@@ -415,7 +415,7 @@ function applyFilters() {
 
   if (debugSignature !== lastDebugSignature) {
     lastDebugSignature = debugSignature;
-    debugLog("Skan ofert", {
+    debugLog("Deal scan", {
       normalizers: document.querySelectorAll(NORMALIZER_SELECTOR).length,
       offersWithMerchant: items.length,
       addedButtons: addedButtonsCount,
@@ -485,7 +485,7 @@ function injectStyles() {
 }
 
 async function loadHiddenStores() {
-  debugLog("Content script załadowany", {
+  debugLog("Content script loaded", {
     url: window.location.href,
     normalizers: document.querySelectorAll(NORMALIZER_SELECTOR).length
   });
@@ -525,7 +525,7 @@ browser.storage.onChanged.addListener((changes, areaName) => {
 
   getStoredHiddenStores().then((stores) => {
     hiddenStores = stores;
-    debugLog("Zmieniono listę sklepów", hiddenStores);
+    debugLog("Hidden store list changed", hiddenStores);
     applyFilters();
   });
 });
