@@ -1,11 +1,14 @@
 const STORAGE_KEY = "hiddenStores";
 const HIDDEN_KEY = "pepperStoreFilterHidden";
 const NORMALIZER_SELECTOR = '[data-vue3*="ThreadMainListItemNormalizer"]';
+const CARD_SELECTOR = 'article[id^="thread_"], article.thread, [data-t="thread"]';
+const BUTTON_SELECTOR = ".pepper-store-filter-button";
 const DEBUG_STORAGE_KEY = "pepperStoreFilterDebug";
 const DEBUG_QUERY_PARAM = "pshdebug";
 
 let hiddenStores = [];
 let lastDebugSignature = "";
+let applyFiltersTimer = null;
 
 function isDebugEnabled() {
   try {
@@ -44,6 +47,14 @@ function normalizeStoreName(value) {
     .replace(/\s+/g, " ");
 }
 
+function normalizeLinkHostName(value) {
+  return normalizeStoreName(value)
+    .replace(/^https?:\/\//i, "")
+    .replace(/^\/\//, "")
+    .replace(/\/.*$/, "")
+    .replace(/^www\./i, "");
+}
+
 function mergeStoreLists(...storeLists) {
   const merged = [];
 
@@ -67,27 +78,32 @@ function mergeStoreLists(...storeLists) {
   return merged.sort((a, b) => a.localeCompare(b, "pl"));
 }
 
-async function getStoredHiddenStores() {
-  let syncedStores = [];
-  let localStores = [];
+async function updateLocalCache(stores) {
+  const normalizedStores = mergeStoreLists(stores);
+  const localResult = await browser.storage.local.get({ [STORAGE_KEY]: [] });
+  const localStores = mergeStoreLists(localResult[STORAGE_KEY]);
 
+  if (JSON.stringify(localStores) !== JSON.stringify(normalizedStores)) {
+    await browser.storage.local.set({ [STORAGE_KEY]: normalizedStores });
+  }
+}
+
+async function getStoredHiddenStores() {
   if (browser.storage.sync) {
     try {
       const syncResult = await browser.storage.sync.get({ [STORAGE_KEY]: [] });
-      syncedStores = Array.isArray(syncResult[STORAGE_KEY])
-        ? syncResult[STORAGE_KEY]
-        : [];
+      const syncedStores = mergeStoreLists(syncResult[STORAGE_KEY]);
+
+      await updateLocalCache(syncedStores);
+      return syncedStores;
     } catch (error) {
       debugLog("Firefox Sync niedostępny podczas odczytu", error);
     }
   }
 
   const localResult = await browser.storage.local.get({ [STORAGE_KEY]: [] });
-  localStores = Array.isArray(localResult[STORAGE_KEY])
-    ? localResult[STORAGE_KEY]
-    : [];
 
-  return mergeStoreLists(syncedStores, localStores);
+  return mergeStoreLists(localResult[STORAGE_KEY]);
 }
 
 async function setStoredHiddenStores(stores) {
@@ -168,27 +184,105 @@ function getCardFromNormalizer(normalizer) {
   );
 }
 
+function getThreadDataFromElement(element) {
+  const candidates = [
+    element,
+    ...Array.from(element.querySelectorAll?.("[data-vue3]") || [])
+  ];
+
+  for (const candidate of candidates) {
+    const vueData = parseJsonAttribute(candidate.getAttribute?.("data-vue3"));
+    const thread = findThreadData(vueData);
+
+    if (thread) {
+      return thread;
+    }
+  }
+
+  return null;
+}
+
+function cleanMerchantCandidate(value) {
+  return normalizeStoreName(value)
+    .replace(
+      /([\p{Ll}])([\p{Lu}\p{N}]{3,})(?=\s*(?:Pobierz|Kod|Id\S*|Przejd\S*|Zobacz|Otw\S*))/u,
+      "$1"
+    )
+    .replace(
+      /\s+[\p{Lu}\p{N}]{3,}(?=\s*(?:Pobierz|Kod|Id\S*|Przejd\S*|Zobacz|Otw\S*))/u,
+      ""
+    )
+    .replace(
+      /\s*(?:Pobierz\s+kod.*|Pobierz.*|Kod.*|Id\S*\s+do\s+okazji.*|Przejd\S*.*|Zobacz.*|Otw\S*.*)$/i,
+      ""
+    )
+    .replace(/[^\p{L}\p{N}\s.&'’+-]+$/u, "")
+    .trim();
+}
+
+function getMerchantNameFromCardText(card) {
+  const text = normalizeStoreName(card?.textContent);
+  const match = text.match(
+    /(?:Dostępne\s+w|Zrealizuj\s+na)\s+(.+?)(?:\s*Dodane|\s*Dodał|\s*Opublikowane|\s+przez|\s*Idź\s+do\s+okazji|\s*Przejdź|\s*Zobacz|\s*Otwórz|$)/i
+  );
+
+  if (!match) {
+    return "";
+  }
+
+  return cleanMerchantCandidate(match[1]);
+}
+
+function createItemFromThread(card, normalizer, thread) {
+  const merchantName =
+    normalizeStoreName(thread?.merchant?.merchantName) ||
+    normalizeLinkHostName(thread?.linkHost) ||
+    getMerchantNameFromCardText(card);
+
+  if (!merchantName || thread?.type === "Discussion") {
+    return null;
+  }
+
+  return {
+    normalizer,
+    card,
+    merchant: {
+      name: merchantName
+    }
+  };
+}
+
 function getNormalizerItems() {
-  return Array.from(document.querySelectorAll(NORMALIZER_SELECTOR))
-    .map((normalizer) => {
-      const vueData = parseJsonAttribute(normalizer.getAttribute("data-vue3"));
-      const thread = findThreadData(vueData);
-      const merchantName = normalizeStoreName(thread?.merchant?.merchantName);
+  const items = [];
+  const seenCards = new Set();
 
-      if (!merchantName) {
-        return null;
-      }
+  for (const normalizer of document.querySelectorAll(NORMALIZER_SELECTOR)) {
+    const card = getCardFromNormalizer(normalizer);
+    const thread = getThreadDataFromElement(normalizer);
+    const item = card ? createItemFromThread(card, normalizer, thread) : null;
 
-      return {
-        normalizer,
-        card: getCardFromNormalizer(normalizer),
-        merchant: {
-          name: merchantName
-        }
-      };
-    })
-    .filter(Boolean)
-    .filter((item) => item.card);
+    if (item) {
+      items.push(item);
+      seenCards.add(item.card);
+    }
+  }
+
+  for (const card of document.querySelectorAll(CARD_SELECTOR)) {
+    if (seenCards.has(card)) {
+      continue;
+    }
+
+    const normalizer = card.querySelector?.(NORMALIZER_SELECTOR) || card;
+    const thread = getThreadDataFromElement(card);
+    const item = createItemFromThread(card, normalizer, thread);
+
+    if (item) {
+      items.push(item);
+      seenCards.add(item.card);
+    }
+  }
+
+  return items;
 }
 
 function isStoreHidden(storeName) {
@@ -200,13 +294,21 @@ function isStoreHidden(storeName) {
 }
 
 function hideCard(card) {
-  card.dataset[HIDDEN_KEY] = "true";
-  card.style.display = "none";
+  if (card.dataset) {
+    card.dataset[HIDDEN_KEY] = "true";
+  }
+
+  if (card.style) {
+    card.style.display = "none";
+  }
 }
 
 function showCard(card) {
-  if (card.dataset[HIDDEN_KEY] === "true") {
+  if (card.dataset?.[HIDDEN_KEY] === "true") {
     delete card.dataset[HIDDEN_KEY];
+  }
+
+  if (card.style) {
     card.style.display = "";
   }
 }
@@ -230,15 +332,6 @@ async function saveHiddenStore(storeName) {
   return setStoredHiddenStores([...currentStores, cleanedStoreName]);
 }
 
-function getButtonTarget(card, normalizer) {
-  return (
-    card.querySelector('[data-vue3*="ThreadListItemInfo"]') ||
-    card.querySelector(".thread-title") ||
-    card.querySelector(".threadListCard-body") ||
-    normalizer
-  );
-}
-
 function createFilterButton(merchant) {
   const button = document.createElement("button");
 
@@ -252,6 +345,14 @@ function createFilterButton(merchant) {
     event.stopPropagation();
     event.stopImmediatePropagation();
 
+    const shouldAddStore = window.confirm(
+      `Czy chcesz dodać sklep ${merchant.name} do filtrowanych?`
+    );
+
+    if (!shouldAddStore) {
+      return;
+    }
+
     hiddenStores = await saveHiddenStore(merchant.name);
     applyFilters();
   });
@@ -260,16 +361,27 @@ function createFilterButton(merchant) {
 }
 
 function addFilterButton(item) {
-  if (item.card.querySelector(".pepper-store-filter-button")) {
+  if (item.card.querySelector(BUTTON_SELECTOR)) {
     return;
   }
 
-  const target = getButtonTarget(item.card, item.normalizer);
+  const body = item.card.querySelector(".threadListCard-body");
+  const target = body || item.card.querySelector(".thread-title") || item.normalizer;
+  const beforeElement = body?.querySelector(".userHtml");
   const wrapper = document.createElement("div");
 
   wrapper.className = "pepper-store-filter-wrapper";
   wrapper.appendChild(createFilterButton(item.merchant));
-  target.insertAdjacentElement("afterend", wrapper);
+
+  if (beforeElement) {
+    beforeElement.insertAdjacentElement("beforebegin", wrapper);
+  } else if (body) {
+    body.appendChild(wrapper);
+  } else if (target?.insertAdjacentElement) {
+    target.insertAdjacentElement("afterend", wrapper);
+  } else {
+    item.card.appendChild?.(wrapper);
+  }
 }
 
 function applyFilters() {
@@ -278,10 +390,10 @@ function applyFilters() {
   let addedButtonsCount = 0;
 
   for (const item of items) {
-    const hadButton = Boolean(item.card.querySelector(".pepper-store-filter-button"));
+    const hadButton = Boolean(item.card.querySelector(BUTTON_SELECTOR));
     addFilterButton(item);
 
-    if (!hadButton && item.card.querySelector(".pepper-store-filter-button")) {
+    if (!hadButton && item.card.querySelector(BUTTON_SELECTOR)) {
       addedButtonsCount += 1;
     }
 
@@ -312,6 +424,17 @@ function applyFilters() {
       sampleMerchants: merchantNames.slice(0, 10)
     });
   }
+}
+
+function scheduleApplyFilters(delay = 150) {
+  clearTimeout(applyFiltersTimer);
+  applyFiltersTimer = setTimeout(applyFilters, delay);
+}
+
+function scheduleFollowUpScans() {
+  scheduleApplyFilters(80);
+  setTimeout(applyFilters, 350);
+  setTimeout(applyFilters, 1000);
 }
 
 function injectStyles() {
@@ -380,13 +503,19 @@ function observePageChanges() {
 
   const observer = new MutationObserver(() => {
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(applyFilters, 150);
+    debounceTimer = setTimeout(scheduleFollowUpScans, 150);
   });
 
   observer.observe(document.body, {
     childList: true,
     subtree: true
   });
+
+  window.addEventListener("scroll", scheduleFollowUpScans, {
+    passive: true
+  });
+
+  document.addEventListener?.("scroll", scheduleFollowUpScans, true);
 }
 
 browser.storage.onChanged.addListener((changes, areaName) => {

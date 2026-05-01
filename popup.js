@@ -24,6 +24,15 @@ function setStatus(message, isWarning = false) {
   statusText.classList.toggle("warning", isWarning);
 }
 
+function updateStorageStatus(syncAvailable) {
+  setStatus(
+    syncAvailable
+      ? "Lista zapisana w Firefox Sync."
+      : "Firefox Sync niedostępny. Lista zapisana lokalnie jako fallback.",
+    !syncAvailable
+  );
+}
+
 function mergeStoreLists(...storeLists) {
   const merged = [];
 
@@ -47,36 +56,34 @@ function mergeStoreLists(...storeLists) {
   return merged.sort((a, b) => a.localeCompare(b, "pl"));
 }
 
-async function getHiddenStores() {
-  let syncedStores = [];
-  let localStores = [];
-  let syncAvailable = false;
+async function updateLocalCache(stores) {
+  const normalizedStores = mergeStoreLists(stores);
+  const localResult = await browser.storage.local.get({ [STORAGE_KEY]: [] });
+  const localStores = mergeStoreLists(localResult[STORAGE_KEY]);
 
+  if (JSON.stringify(localStores) !== JSON.stringify(normalizedStores)) {
+    await browser.storage.local.set({ [STORAGE_KEY]: normalizedStores });
+  }
+}
+
+async function getHiddenStores() {
   if (browser.storage.sync) {
     try {
       const syncResult = await browser.storage.sync.get({ [STORAGE_KEY]: [] });
-      syncedStores = Array.isArray(syncResult[STORAGE_KEY])
-        ? syncResult[STORAGE_KEY]
-        : [];
-      syncAvailable = true;
+      const syncedStores = mergeStoreLists(syncResult[STORAGE_KEY]);
+
+      await updateLocalCache(syncedStores);
+      updateStorageStatus(true);
+      return syncedStores;
     } catch (error) {
       console.warn("[Filtr sklepów Pepper] Firefox Sync niedostępny", error);
     }
   }
 
   const localResult = await browser.storage.local.get({ [STORAGE_KEY]: [] });
-  localStores = Array.isArray(localResult[STORAGE_KEY])
-    ? localResult[STORAGE_KEY]
-    : [];
+  updateStorageStatus(false);
 
-  setStatus(
-    syncAvailable
-      ? "Lista synchronizowana przez Firefox Sync."
-      : "Firefox Sync niedostępny. Lista zapisana lokalnie.",
-    !syncAvailable
-  );
-
-  return mergeStoreLists(syncedStores, localStores);
+  return mergeStoreLists(localResult[STORAGE_KEY]);
 }
 
 async function saveHiddenStores(hiddenStores) {
@@ -93,13 +100,7 @@ async function saveHiddenStores(hiddenStores) {
   }
 
   await browser.storage.local.set({ [STORAGE_KEY]: normalizedStores });
-
-  setStatus(
-    syncAvailable
-      ? "Lista synchronizowana przez Firefox Sync."
-      : "Firefox Sync niedostępny. Lista zapisana lokalnie.",
-    !syncAvailable
-  );
+  updateStorageStatus(syncAvailable);
 
   return normalizedStores;
 }
