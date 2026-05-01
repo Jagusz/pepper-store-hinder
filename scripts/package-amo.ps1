@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $dist = Join-Path $root "dist"
-$zip = Join-Path $dist "deal-store-filter-0.1.0.zip"
+$zip = Join-Path $dist "deal-store-filter-0.2.0.zip"
 
 $files = @(
   "manifest.json",

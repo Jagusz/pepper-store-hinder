@@ -2,6 +2,18 @@
 
 [English version](README.en.md)
 
+[Lista zmian](CHANGELOG.md)
+
+## Co nowego w 0.2.0
+
+- Dodano widok ustawień w popupie.
+- Dodano przełącznik `Disable filters` / `Enable filters`, który tymczasowo włącza lub wyłącza filtrowanie bez usuwania zapisanej listy sklepów.
+- Dodano ustawienie `Firefox Sync`, które pozwala wybrać zapis przez Firefox Sync albo zapis tylko lokalny na bieżącym urządzeniu.
+- Dodano ustawienie `Always filter when opening a page`, które automatycznie przywraca filtrowanie po otwarciu obsługiwanej strony.
+- Dodano ustawienie `Show filtered deals as dimmed`, które pokazuje przefiltrowane oferty jako kompaktowe, przygaszone karty zamiast całkowicie je ukrywać.
+- Przygaszone karty pokazują komunikat `Filtered by Deal Store Filter` oraz przycisk `Remove filter` usuwający dany sklep z listy filtrów.
+- Zmiany listy filtrów i ustawień próbują odświeżyć aktywną kartę od razu, jeśli działa na niej content script rozszerzenia.
+
 Nieoficjalne rozszerzenie do Firefoksa, które pozwala ukrywać oferty z wybranych sklepów na obsługiwanych stronach z promocjami.
 
 Obecna wersja działa na Pepper.pl. Rozszerzenie nie jest tworzone, wspierane ani zatwierdzone przez Pepper.pl.
@@ -74,6 +86,18 @@ Głównym miejscem zapisu listy filtrów jest `browser.storage.sync`. Jeśli uż
 
 Kopia w `browser.storage.local` jest utrzymywana tylko po to, aby zwiększyć odporność dodatku na błędy lub niedostępność Sync.
 
+Jeśli w ustawieniach wyłączysz `Firefox Sync`, rozszerzenie nie czyta ani nie zapisuje listy w `browser.storage.sync`. W takim trybie lista filtrów zostaje tylko w lokalnym profilu Firefoksa.
+
+## Ustawienia
+
+Popup ma widok ustawień otwierany ikoną koła zębatego.
+
+- `Firefox Sync` - zapisuje listę filtrów w `browser.storage.sync` i utrzymuje lokalną kopię awaryjną. Po wyłączeniu lista jest zapisywana tylko lokalnie na bieżącym urządzeniu.
+- `Always filter when opening a page` - po otwarciu obsługiwanej strony automatycznie włącza filtrowanie, nawet jeśli wcześniej zostało tymczasowo wyłączone.
+- `Show filtered deals as dimmed` - zamiast ukrywać pasujące oferty, zostawia je na liście jako kompaktowe, przygaszone karty.
+
+Przełącznik `Disable filters` / `Enable filters` w głównym widoku popupu tymczasowo pokazuje albo ukrywa pasujące oferty bez usuwania zapisanej listy sklepów.
+
 ## Instalacja lokalna do testów
 
 1. Otwórz w Firefoxie:
@@ -101,7 +125,7 @@ Na Windows można użyć skryptu:
 Skrypt tworzy plik:
 
 ```text
-dist/deal-store-filter-0.1.0.zip
+dist/deal-store-filter-0.2.0.zip
 ```
 
 ZIP zawiera tylko pliki potrzebne do działania dodatku:

@@ -67,9 +67,9 @@ test("manifest keeps a stable Gecko extension id", () => {
   );
 });
 
-// Verifies the release version in the manifest matches the first AMO package.
-test("manifest version is 0.1.0", () => {
+// Verifies the release version in the manifest matches the current AMO package.
+test("manifest version is 0.2.0", () => {
   const manifest = loadManifest();
 
-  assert.equal(manifest.version, "0.1.0");
+  assert.equal(manifest.version, "0.2.0");
 });
