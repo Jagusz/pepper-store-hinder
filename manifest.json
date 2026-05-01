@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
-  "name": "Filtr sklepów dla Pepper.pl",
+  "name": "Deal Store Filter",
   "version": "0.2.0",
-  "description": "Nieoficjalne rozszerzenie do ukrywania ofert z wybranych sklepów na Pepper.pl. Lista filtrów może być synchronizowana przez Firefox Sync.",
+  "description": "Hide deals from selected stores on supported shopping and deal websites. Filters can be synchronized with Firefox Sync.",
   "permissions": [
     "storage",
     "https://www.pepper.pl/*"
@@ -18,12 +18,12 @@
     }
   ],
   "browser_action": {
-    "default_title": "Filtr sklepów dla Pepper.pl",
+    "default_title": "Deal Store Filter",
     "default_popup": "popup.html"
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "filtr-sklepow-pepper@example.local",
+      "id": "deal-store-filter@example.local",
       "data_collection_permissions": {
         "required": [
           "none"

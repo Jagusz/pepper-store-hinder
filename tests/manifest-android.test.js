@@ -24,6 +24,6 @@ test("manifest keeps a stable Gecko extension id", () => {
 
   assert.equal(
     manifest.browser_specific_settings.gecko.id,
-    "filtr-sklepow-pepper@example.local"
+    "deal-store-filter@example.local"
   );
 });

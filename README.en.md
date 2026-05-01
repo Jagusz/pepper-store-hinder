@@ -1,18 +1,18 @@
-# Store Filter for Pepper.pl
+# Deal Store Filter
 
 [Polish version](README.md)
 
-An unofficial Firefox extension that lets you hide Pepper.pl deals from selected stores.
+An unofficial Firefox extension that lets you hide deals from selected stores on supported shopping and deal websites.
 
-This extension is not created, supported, or endorsed by Pepper.pl.
+The current version works on Pepper.pl. This extension is not created, supported, or endorsed by Pepper.pl.
 
 ## Features
 
-- Works on `https://www.pepper.pl/*`.
+- Currently works on `https://www.pepper.pl/*`.
 - Adds a `Filtruj sklep: Store name` button next to deals.
 - Hides deals from stores saved on the filter list.
 - Works on deal listings and individual deal pages.
-- Reads the store from `data-vue3` data when Pepper.pl exposes it in the deal component.
+- Reads the store from `data-vue3` data when the supported website exposes it in the deal component.
 - Uses `props.thread.merchant.merchantName` as the primary store name.
 - When `merchant` is empty, uses `props.thread.linkHost`, for example `www.facebook.com` -> `facebook.com`.
 - When structured data is unavailable, tries to read the store from visible deal text, including labels such as `Dostępne w` and `Zrealizuj na`.
@@ -21,7 +21,7 @@ This extension is not created, supported, or endorsed by Pepper.pl.
 
 ## How It Works
 
-On deal listings, the extension first reads data embedded by Pepper.pl in the `data-vue3` attribute:
+On deal listings, the extension first reads data embedded by the supported website in the `data-vue3` attribute:
 
 ```text
 props.thread.merchant.merchantName
@@ -40,7 +40,7 @@ Dostępne w Store name
 Zrealizuj na Store name
 ```
 
-The text fallback also cleans appended Pepper.pl labels, CTA button text, and voucher codes, so the filter button does not receive names like `FlaconiSPRINGTIMEPobierz kod`.
+The text fallback also cleans appended website labels, CTA button text, and voucher codes, so the filter button does not receive names like `FlaconiSPRINGTIMEPobierz kod`.
 
 When a store can be detected, the extension adds this button next to the deal:
 
@@ -50,7 +50,7 @@ Filtruj sklep: Store name
 
 Clicking the button asks for confirmation, saves the store to the filter list, and hides all deals from the same store.
 
-It is best to add store names exactly as they appear on Pepper.pl, for example `Amazon.pl`, `Media Expert`, `ALDI`.
+It is best to add store names exactly as they appear on the supported website, for example `Amazon.pl`, `Media Expert`, `ALDI`.
 
 ## Privacy
 
@@ -86,7 +86,7 @@ The `browser.storage.local` copy is kept to make the add-on more resilient to Sy
 3. Select `manifest.json` from the extension directory.
 4. Open `https://www.pepper.pl/`.
 
-After changing files, click `Reload` next to the add-on in `about:debugging`, then refresh the Pepper.pl tab.
+After changing files, click `Reload` next to the add-on in `about:debugging`, then refresh the supported website tab.
 
 ## Firefox for Android
 
@@ -113,7 +113,7 @@ On Windows, you can use this script:
 The script creates:
 
 ```text
-dist/filtr-sklepow-dla-pepper-pl.zip
+dist/deal-store-filter-android-0.2.0.zip
 ```
 
 The ZIP contains only the files required to run the add-on:
@@ -129,13 +129,13 @@ The package does not include `.git`, `.github`, `tests`, `node_modules`, or CI f
 
 ## Unofficial Add-on
 
-Store Filter for Pepper.pl is an independent project.
+Deal Store Filter is an independent project.
 
-The extension is not created, supported, or endorsed by Pepper.pl. The Pepper.pl name is used only to identify the website where the add-on works.
+The extension is not created, supported, or endorsed by Pepper.pl. The Pepper.pl name is used only to identify the currently supported website.
 
 ## Debugging
 
-You can enable debug logs in the console on Pepper.pl:
+You can enable debug logs in the console on a supported website:
 
 ```js
 localStorage.setItem("pepperStoreFilterDebug", "1")
@@ -145,7 +145,7 @@ location.reload()
 After refreshing, the console will show entries starting with:
 
 ```text
-[Filtr sklepów Pepper]
+[Deal Store Filter]
 ```
 
 To disable logs:
@@ -198,7 +198,7 @@ The same tests run in GitHub Actions.
 ## Files
 
 - `manifest.json` - Firefox Manifest V2 add-on configuration.
-- `content.js` - logic running on Pepper.pl.
+- `content.js` - logic running on supported websites.
 - `popup.html` - popup HTML.
 - `popup.js` - popup logic and store list management.
 - `popup.css` - popup styles.

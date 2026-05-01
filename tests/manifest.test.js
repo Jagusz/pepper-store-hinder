@@ -45,14 +45,24 @@ test("manifest does not declare remote scripts", () => {
   assert.equal(/https?:\/\/(?!www\.pepper\.pl\/\*)/.test(manifestText), false);
 });
 
-// Verifies user-facing metadata uses the intended unofficial product name and
-// AMO description.
+// Verifies user-facing metadata uses the intended product name and AMO
+// description.
 test("manifest uses publication-ready name and description", () => {
   const manifest = loadManifest();
 
-  assert.equal(manifest.name, "Filtr sklepów dla Pepper.pl");
+  assert.equal(manifest.name, "Deal Store Filter");
   assert.equal(
     manifest.description,
-    "Nieoficjalne rozszerzenie do ukrywania ofert z wybranych sklepów na Pepper.pl. Lista filtrów może być synchronizowana przez Firefox Sync."
+    "Hide deals from selected stores on supported shopping and deal websites. Filters can be synchronized with Firefox Sync."
+  );
+});
+
+// Verifies the add-on ID is stable and matches the broader product name.
+test("manifest keeps a stable Gecko extension id", () => {
+  const manifest = loadManifest();
+
+  assert.equal(
+    manifest.browser_specific_settings.gecko.id,
+    "deal-store-filter@example.local"
   );
 });

@@ -27,8 +27,8 @@ function setStatus(message, isWarning = false) {
 function updateStorageStatus(syncAvailable) {
   setStatus(
     syncAvailable
-      ? "Lista zapisana w Firefox Sync."
-      : "Firefox Sync niedostępny. Lista zapisana lokalnie jako fallback.",
+      ? "List saved in Firefox Sync."
+      : "Firefox Sync unavailable. List saved locally as a fallback.",
     !syncAvailable
   );
 }
@@ -69,7 +69,7 @@ async function getHiddenStores() {
         : [];
       syncAvailable = true;
     } catch (error) {
-      console.warn("[Filtr sklepów Pepper] Firefox Sync niedostępny", error);
+      console.warn("[Deal Store Filter] Firefox Sync unavailable", error);
     }
   }
 
@@ -92,7 +92,7 @@ async function saveHiddenStores(hiddenStores) {
       await browser.storage.sync.set({ [STORAGE_KEY]: normalizedStores });
       syncAvailable = true;
     } catch (error) {
-      console.warn("[Filtr sklepów Pepper] Firefox Sync niedostępny", error);
+      console.warn("[Deal Store Filter] Firefox Sync unavailable", error);
     }
   }
 
@@ -109,7 +109,7 @@ function renderStores(hiddenStores) {
   if (hiddenStores.length === 0) {
     const item = document.createElement("li");
     item.className = "empty";
-    item.textContent = "Brak ukrytych sklepów.";
+    item.textContent = "No hidden stores.";
     list.append(item);
     return;
   }
@@ -121,7 +121,7 @@ function renderStores(hiddenStores) {
 
     name.textContent = store;
     removeButton.type = "button";
-    removeButton.textContent = "Usuń";
+    removeButton.textContent = "Remove";
     removeButton.addEventListener("click", async () => {
       const nextStores = hiddenStores.filter((_, itemIndex) => itemIndex !== index);
       renderStores(await saveHiddenStores(nextStores));
@@ -154,8 +154,8 @@ form.addEventListener("submit", async (event) => {
     renderStores(await saveHiddenStores(nextStores));
     input.value = "";
   } catch (error) {
-    console.error("[Filtr sklepów Pepper] Nie udało się zapisać filtra", error);
-    setStatus("Nie udało się zapisać filtra. Sprawdź konsolę popupu.", true);
+    console.error("[Deal Store Filter] Failed to save filter", error);
+    setStatus("Failed to save filter. Check the popup console.", true);
   }
 });
 
@@ -174,6 +174,6 @@ browser.storage.onChanged.addListener((changes, areaName) => {
 getHiddenStores()
   .then(renderStores)
   .catch((error) => {
-    console.error("[Filtr sklepów Pepper] Nie udało się odczytać filtrów", error);
-    setStatus("Nie udało się odczytać filtrów. Sprawdź konsolę popupu.", true);
+    console.error("[Deal Store Filter] Failed to read filters", error);
+    setStatus("Failed to read filters. Check the popup console.", true);
   });

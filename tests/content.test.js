@@ -280,8 +280,8 @@ test("getNormalizerItems strips joined added label from rendered merchant text",
   );
 });
 
-// Verifies Pepper cards that label the store as "Zrealizuj na" are parsed the
-// same way as "Dostępne w".
+// Verifies Pepper cards that use the rendered redeem-on label are parsed the
+// same way as cards that use the available-at label.
 test("getNormalizerItems falls back to rendered redeem-on merchant text", () => {
   const card = {
     textContent: "Kupon 10 zł Zrealizuj na Rossmann Idź do okazji",
