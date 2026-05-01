@@ -6,16 +6,21 @@ const vm = require("node:vm");
 
 function createMockElement(tagName = "div") {
   const calls = [];
+  const children = [];
 
   return {
     tagName,
     id: "",
     className: "",
+    dataset: {},
     style: {},
     textContent: "",
     title: "",
     type: "",
-    appendChild: () => {},
+    children,
+    appendChild: (child) => {
+      children.push(child);
+    },
     addEventListener: (...args) => {
       calls.push(args);
     },
@@ -722,6 +727,248 @@ test("refreshStateFromStorage shows hidden offers when filters are disabled", as
 
   assert.equal(card.style.display, "");
   assert.equal(card.dataset.pepperStoreFilterHidden, undefined);
+});
+
+// Verifies filtered deals can stay visible in a compact dimmed state when the
+// user chooses not to fully hide matching stores.
+test("refreshStateFromStorage dims hidden offers when dimmed mode is enabled", async () => {
+  const classNames = new Set();
+  const card = {
+    appendChild: () => {},
+    classList: {
+      add: (className) => classNames.add(className),
+      remove: (className) => classNames.delete(className)
+    },
+    dataset: {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    style: {
+      display: "none"
+    }
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1274002",
+            type: "Deal",
+            merchant: {
+              merchantName: "Media Expert"
+            }
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement: createMockElement
+    },
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: ["Media Expert"] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return {
+                settings: {
+                  useFirefoxSync: true,
+                  alwaysFilterOnPageOpen: true,
+                  filtersEnabled: true,
+                  showFilteredAsDimmed: true
+                }
+              };
+            }
+
+            return { hiddenStores: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: () => {}
+        }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(card.style.display, "");
+  assert.equal(card.dataset.pepperStoreFilterHidden, undefined);
+  assert.equal(card.dataset.pepperStoreFilterDimmed, "true");
+  assert.equal(classNames.has("pepper-store-filter-dimmed"), true);
+});
+
+// Verifies dimmed filtered offers explain why they are compacted and let the
+// user remove that store filter without opening the popup.
+test("dimmed filtered offers include a remove filter action", async () => {
+  const savedStoreLists = [];
+  const classNames = new Set();
+  let notice = null;
+  let noticeParent = "";
+
+  function createElement(tagName = "div") {
+    const calls = [];
+    const children = [];
+
+    return {
+      tagName,
+      className: "",
+      dataset: {},
+      style: {},
+      textContent: "",
+      title: "",
+      type: "",
+      children,
+      appendChild: (child) => {
+        children.push(child);
+      },
+      addEventListener: (...args) => {
+        calls.push(args);
+      },
+      addEventListenerCalls: calls,
+      remove: () => {
+        if (notice?.className === "pepper-store-filter-dimmed-notice") {
+          notice = null;
+        }
+      }
+    };
+  }
+
+  const card = {
+    appendChild: (child) => {
+      if (child.className === "pepper-store-filter-dimmed-notice") {
+        notice = child;
+        noticeParent = "card";
+      }
+    },
+    classList: {
+      add: (className) => classNames.add(className),
+      remove: (className) => classNames.delete(className)
+    },
+    dataset: {},
+    querySelector: (selector) => {
+      if (selector === ".pepper-store-filter-dimmed-notice") {
+        return notice;
+      }
+
+      if (selector === ".threadListCard") {
+        return {
+          prepend: (child) => {
+            if (child.className === "pepper-store-filter-dimmed-notice") {
+              notice = child;
+              noticeParent = "threadListCard";
+            }
+          }
+        };
+      }
+
+      return null;
+    },
+    querySelectorAll: () => [],
+    style: {
+      display: "none"
+    }
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1274003",
+            type: "Deal",
+            merchant: {
+              merchantName: "Media Expert"
+            }
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement
+    },
+    browser: {
+      storage: {
+        sync: null,
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return {
+                settings: {
+                  useFirefoxSync: false,
+                  alwaysFilterOnPageOpen: true,
+                  filtersEnabled: true,
+                  showFilteredAsDimmed: true
+                }
+              };
+            }
+
+            return { hiddenStores: ["Media Expert", "Other Store"] };
+          },
+          set: async (value) => {
+            if (Object.prototype.hasOwnProperty.call(value, "hiddenStores")) {
+              savedStoreLists.push(value.hiddenStores);
+            }
+          }
+        },
+        onChanged: {
+          addListener: () => {}
+        }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.ok(notice);
+  assert.equal(noticeParent, "threadListCard");
+  assert.equal(notice.children[0].textContent, "Filtered by Deal Store Filter");
+  assert.equal(notice.children[1].textContent, "Remove filter");
+
+  await notice.children[1].addEventListenerCalls[0][1]({
+    preventDefault: () => {},
+    stopPropagation: () => {},
+    stopImmediatePropagation: () => {}
+  });
+
+  assert.equal(
+    JSON.stringify(savedStoreLists.at(-1)),
+    JSON.stringify(["Other Store"])
+  );
+  assert.equal(card.dataset.pepperStoreFilterDimmed, undefined);
+  assert.equal(classNames.has("pepper-store-filter-dimmed"), false);
 });
 
 // Verifies the default-on page-opening option restores filtering when a new

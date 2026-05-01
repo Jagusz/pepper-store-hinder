@@ -133,6 +133,11 @@ header span {
   font-weight: 600;
 }
 
+.checkbox-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 form {
   padding: 12px;
   border: 1px solid var(--pepper-border);

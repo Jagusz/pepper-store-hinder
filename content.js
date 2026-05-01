@@ -1,19 +1,25 @@
 const STORAGE_KEY = "hiddenStores";
 const SETTINGS_KEY = "settings";
 const HIDDEN_KEY = "pepperStoreFilterHidden";
+const DIMMED_KEY = "pepperStoreFilterDimmed";
+const DIMMED_CLASS = "pepper-store-filter-dimmed";
+const DIMMED_NOTICE_SELECTOR = ".pepper-store-filter-dimmed-notice";
 const NORMALIZER_SELECTOR = '[data-vue3*="ThreadMainListItemNormalizer"]';
 const CARD_SELECTOR = 'article[id^="thread_"], article.thread, [data-t="thread"]';
 const BUTTON_SELECTOR = ".pepper-store-filter-button";
 const DEBUG_STORAGE_KEY = "pepperStoreFilterDebug";
 const DEBUG_QUERY_PARAM = "pshdebug";
+const PLUGIN_NAME = "Deal Store Filter";
 const DEFAULT_SETTINGS = {
   useFirefoxSync: true,
   alwaysFilterOnPageOpen: true,
-  filtersEnabled: true
+  filtersEnabled: true,
+  showFilteredAsDimmed: false
 };
 
 let hiddenStores = [];
 let filtersEnabled = true;
+let showFilteredAsDimmed = false;
 let lastDebugSignature = "";
 let applyFiltersTimer = null;
 
@@ -99,7 +105,8 @@ function normalizeSettings(value) {
   return {
     useFirefoxSync: value?.useFirefoxSync !== false,
     alwaysFilterOnPageOpen: value?.alwaysFilterOnPageOpen !== false,
-    filtersEnabled: value?.filtersEnabled !== false
+    filtersEnabled: value?.filtersEnabled !== false,
+    showFilteredAsDimmed: value?.showFilteredAsDimmed === true
   };
 }
 
@@ -152,6 +159,15 @@ async function setStoredHiddenStores(stores) {
 
   await browser.storage.local.set({ [STORAGE_KEY]: normalizedStores });
   return normalizedStores;
+}
+
+async function removeHiddenStore(storeName) {
+  const normalizedStoreName = normalizeText(storeName);
+  const currentStores = await getStoredHiddenStores();
+
+  return setStoredHiddenStores(
+    currentStores.filter((item) => normalizeText(item) !== normalizedStoreName)
+  );
 }
 
 function parseJsonAttribute(value) {
@@ -326,13 +342,96 @@ function isStoreHidden(storeName) {
   });
 }
 
+function removeDimmedNotice(card) {
+  const notice = card.querySelector?.(DIMMED_NOTICE_SELECTOR);
+
+  if (!notice) {
+    return;
+  }
+
+  if (notice.remove) {
+    notice.remove();
+  } else {
+    notice.parentNode?.removeChild?.(notice);
+  }
+}
+
+function createDimmedNotice(merchant) {
+  const notice = document.createElement("div");
+  const label = document.createElement("span");
+  const button = document.createElement("button");
+
+  notice.className = "pepper-store-filter-dimmed-notice";
+  notice.dataset.store = merchant.name;
+  label.textContent = `Filtered by ${PLUGIN_NAME}`;
+  button.type = "button";
+  button.textContent = "Remove filter";
+  button.title = `Remove filter for ${merchant.name}`;
+
+  button.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+
+    hiddenStores = await removeHiddenStore(merchant.name);
+    applyFilters();
+  });
+
+  notice.appendChild(label);
+  notice.appendChild(button);
+  return notice;
+}
+
+function ensureDimmedNotice(card, merchant) {
+  const existingNotice = card.querySelector?.(DIMMED_NOTICE_SELECTOR);
+
+  if (existingNotice?.dataset?.store === merchant.name) {
+    return;
+  }
+
+  removeDimmedNotice(card);
+
+  const notice = createDimmedNotice(merchant);
+  const noticeParent =
+    (card.matches?.(".threadListCard") ? card : null) ||
+    card.querySelector?.(".threadListCard") ||
+    card.querySelector?.(".threadItemCard-about") ||
+    card;
+
+  if (noticeParent.prepend) {
+    noticeParent.prepend(notice);
+  } else if (noticeParent.insertAdjacentElement) {
+    noticeParent.insertAdjacentElement("afterbegin", notice);
+  } else {
+    noticeParent.appendChild?.(notice);
+  }
+}
+
 function hideCard(card) {
   if (card.dataset) {
     card.dataset[HIDDEN_KEY] = "true";
+    delete card.dataset[DIMMED_KEY];
   }
+
+  card.classList?.remove(DIMMED_CLASS);
+  removeDimmedNotice(card);
 
   if (card.style) {
     card.style.display = "none";
+  }
+}
+
+function dimCard(card, merchant) {
+  if (card.dataset) {
+    delete card.dataset[HIDDEN_KEY];
+    card.dataset[DIMMED_KEY] = "true";
+  }
+
+  card.classList?.add(DIMMED_CLASS);
+  ensureDimmedNotice(card, merchant);
+
+  if (card.style) {
+    card.style.display = "";
   }
 }
 
@@ -340,6 +439,13 @@ function showCard(card) {
   if (card.dataset?.[HIDDEN_KEY] === "true") {
     delete card.dataset[HIDDEN_KEY];
   }
+
+  if (card.dataset?.[DIMMED_KEY] === "true") {
+    delete card.dataset[DIMMED_KEY];
+  }
+
+  card.classList?.remove(DIMMED_CLASS);
+  removeDimmedNotice(card);
 
   if (card.style) {
     card.style.display = "";
@@ -436,7 +542,12 @@ function applyFilters() {
     }
 
     if (isStoreHidden(item.merchant.name)) {
-      hideCard(item.card);
+      if (showFilteredAsDimmed) {
+        dimCard(item.card, item.merchant);
+      } else {
+        hideCard(item.card);
+      }
+
       hiddenCount += 1;
     } else {
       showCard(item.card);
@@ -448,6 +559,7 @@ function applyFilters() {
     items: items.length,
     hidden: hiddenCount,
     filtersEnabled,
+    showFilteredAsDimmed,
     stores: hiddenStores,
     merchants: merchantNames.slice(0, 10)
   });
@@ -460,6 +572,7 @@ function applyFilters() {
       addedButtons: addedButtonsCount,
       hiddenOffers: hiddenCount,
       filtersEnabled,
+      showFilteredAsDimmed,
       hiddenStores,
       sampleMerchants: merchantNames.slice(0, 10)
     });
@@ -519,6 +632,113 @@ function injectStyles() {
       transform: translateY(1px);
       box-shadow: none;
     }
+
+    .${DIMMED_CLASS} {
+      display: block !important;
+      min-height: 0 !important;
+    }
+
+    .pepper-store-filter-dimmed-notice {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 0 0 10px !important;
+      padding: 7px 10px;
+      border: 1px solid rgba(255, 100, 0, 0.28);
+      border-radius: 8px;
+      color: #f2f4f7;
+      background: rgba(255, 100, 0, 0.14);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+
+    .pepper-store-filter-dimmed-notice span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .pepper-store-filter-dimmed-notice button {
+      appearance: none;
+      flex: 0 0 auto;
+      padding: 4px 9px;
+      border: 1px solid #de5a00;
+      border-radius: 999px;
+      color: #fff;
+      background: #ff6400;
+      box-shadow: 0 1px 2px rgba(26, 33, 43, 0.14);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.35;
+      cursor: pointer;
+    }
+
+    .pepper-store-filter-dimmed-notice button:hover {
+      background: #e85b00;
+    }
+
+    .pepper-store-filter-dimmed-notice button:active {
+      transform: translateY(1px);
+      box-shadow: none;
+    }
+
+    .${DIMMED_CLASS} .threadListCard {
+      display: block !important;
+      min-height: 0 !important;
+      padding: 12px 14px 10px !important;
+    }
+
+    .${DIMMED_CLASS} .threadListCard-header {
+      display: none !important;
+      margin: 0 !important;
+    }
+
+    .${DIMMED_CLASS} .threadListCard-body {
+      display: block !important;
+    }
+
+    .${DIMMED_CLASS} .thread-title {
+      margin-bottom: 4px !important;
+    }
+
+    .${DIMMED_CLASS} .threadListCard-image,
+    .${DIMMED_CLASS} .threadListCard-label,
+    .${DIMMED_CLASS} .threadItemCard-gallery,
+    .${DIMMED_CLASS} picture,
+    .${DIMMED_CLASS} img,
+    .${DIMMED_CLASS} .imgFrame {
+      display: none !important;
+    }
+
+    .${DIMMED_CLASS} .userHtml,
+    .${DIMMED_CLASS} .threadListCard-footer,
+    .${DIMMED_CLASS} .pepper-store-filter-wrapper {
+      display: none !important;
+    }
+
+    .${DIMMED_CLASS} .threadListCard-body,
+    .${DIMMED_CLASS} .threadItemCard-about {
+      padding-top: 4px !important;
+      padding-bottom: 4px !important;
+    }
+
+    .${DIMMED_CLASS} .threadListCard-body,
+    .${DIMMED_CLASS} .threadItemCard-about > :not(.pepper-store-filter-dimmed-notice) {
+      opacity: 0.48;
+      filter: grayscale(0.85);
+    }
+
+    .${DIMMED_CLASS} .thread-title a {
+      display: -webkit-box !important;
+      overflow: hidden !important;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 1;
+    }
   `;
 
   document.documentElement.appendChild(style);
@@ -535,6 +755,7 @@ async function refreshStateFromStorage(resetFiltersForPage = false) {
   }
 
   filtersEnabled = settings.filtersEnabled;
+  showFilteredAsDimmed = settings.showFilteredAsDimmed;
   hiddenStores = await getStoredHiddenStores(settings);
   applyFilters();
 }
@@ -584,9 +805,18 @@ browser.storage.onChanged.addListener((changes, areaName) => {
   refreshStateFromStorage().then(() => {
     debugLog("Filter state changed", {
       filtersEnabled,
+      showFilteredAsDimmed,
       hiddenStores
     });
   });
+});
+
+browser.runtime?.onMessage?.addListener((message) => {
+  if (message?.type !== "dealStoreFilterRefresh") {
+    return undefined;
+  }
+
+  return refreshStateFromStorage();
 });
 
 injectStyles();
