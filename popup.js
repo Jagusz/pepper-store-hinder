@@ -9,8 +9,10 @@ const input = document.querySelector("#store-name");
 const list = document.querySelector("#store-list");
 const clearButton = document.querySelector("#clear-stores");
 const statusText = document.querySelector("#storage-status");
+const mainView = document.querySelector("#main-view");
 const settingsToggle = document.querySelector("#settings-toggle");
-const settingsPanel = document.querySelector("#settings-panel");
+const settingsBack = document.querySelector("#settings-back");
+const settingsView = document.querySelector("#settings-view");
 const syncCheckbox = document.querySelector("#use-firefox-sync");
 
 function normalizeText(value) {
@@ -68,6 +70,18 @@ function updateStorageStatus(syncAvailable, settings) {
       : "Firefox Sync unavailable. List saved locally as a fallback.",
     !syncAvailable
   );
+}
+
+function showMainView() {
+  mainView.hidden = false;
+  settingsView.hidden = true;
+  settingsToggle.focus();
+}
+
+function showSettingsView() {
+  mainView.hidden = true;
+  settingsView.hidden = false;
+  settingsBack.focus();
 }
 
 function mergeStoreLists(...storeLists) {
@@ -206,12 +220,9 @@ clearButton.addEventListener("click", async () => {
   renderStores(await saveHiddenStores([], settings));
 });
 
-settingsToggle.addEventListener("click", () => {
-  const isExpanded = settingsToggle.getAttribute("aria-expanded") === "true";
+settingsToggle.addEventListener("click", showSettingsView);
 
-  settingsToggle.setAttribute("aria-expanded", String(!isExpanded));
-  settingsPanel.hidden = isExpanded;
-});
+settingsBack.addEventListener("click", showMainView);
 
 syncCheckbox.addEventListener("change", async () => {
   const settings = await saveSettings({

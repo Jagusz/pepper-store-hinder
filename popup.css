@@ -74,14 +74,21 @@ header span {
 }
 
 .icon-button:hover:not(:disabled),
-.icon-button[aria-expanded="true"] {
+.icon-button:focus-visible {
   color: #fff;
   border-color: #4b5563;
   background: #4b5563;
 }
 
+.settings-header {
+  justify-content: flex-start;
+}
+
+.popup-view[hidden] {
+  display: none;
+}
+
 .settings-panel {
-  margin-bottom: 10px;
   padding: 10px 12px;
   border: 1px solid var(--pepper-border);
   border-radius: 8px;
@@ -258,6 +265,11 @@ li button:hover {
     align-items: flex-start;
     flex-direction: column;
     gap: 6px;
+  }
+
+  .settings-header {
+    align-items: center;
+    flex-direction: row;
   }
 
   .input-row {

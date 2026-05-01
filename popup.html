@@ -8,39 +8,52 @@
   </head>
   <body>
     <main>
-      <header>
-        <div>
-          <h1>Deal Store Filter</h1>
-          <span>Firefox Sync</span>
-        </div>
-        <button
-          id="settings-toggle"
-          class="icon-button"
-          type="button"
-          aria-expanded="false"
-          aria-controls="settings-panel"
-          title="Settings"
-        >&#9881;</button>
-      </header>
+      <section id="main-view" class="popup-view">
+        <header>
+          <div>
+            <h1>Deal Store Filter</h1>
+            <span>Firefox Sync</span>
+          </div>
+          <button
+            id="settings-toggle"
+            class="icon-button"
+            type="button"
+            aria-controls="settings-view"
+            title="Settings"
+          >&#9881;</button>
+        </header>
 
-      <section id="settings-panel" class="settings-panel" hidden>
-        <label class="checkbox-row" for="use-firefox-sync">
-          <input id="use-firefox-sync" type="checkbox">
-          <span>Firefox Sync <small>(requires Firefox account)</small></span>
-        </label>
+        <form id="store-form">
+          <label for="store-name">Store to hide</label>
+          <div class="input-row">
+            <input id="store-name" name="store-name" type="text" autocomplete="off" required>
+            <button type="submit">Add</button>
+          </div>
+        </form>
+
+        <button id="clear-stores" class="secondary" type="button">Clear list</button>
+        <p id="storage-status" class="status" role="status"></p>
+        <ul id="store-list"></ul>
       </section>
 
-      <form id="store-form">
-        <label for="store-name">Store to hide</label>
-        <div class="input-row">
-          <input id="store-name" name="store-name" type="text" autocomplete="off" required>
-          <button type="submit">Add</button>
-        </div>
-      </form>
+      <section id="settings-view" class="popup-view" hidden>
+        <header class="settings-header">
+          <button
+            id="settings-back"
+            class="icon-button"
+            type="button"
+            title="Back"
+          >&#8592;</button>
+          <h1>Settings</h1>
+        </header>
 
-      <button id="clear-stores" class="secondary" type="button">Clear list</button>
-      <p id="storage-status" class="status" role="status"></p>
-      <ul id="store-list"></ul>
+        <div class="settings-panel">
+          <label class="checkbox-row" for="use-firefox-sync">
+            <input id="use-firefox-sync" type="checkbox">
+            <span>Firefox Sync <small>(requires Firefox account)</small></span>
+          </label>
+        </div>
+      </section>
     </main>
 
     <script src="popup.js"></script>
