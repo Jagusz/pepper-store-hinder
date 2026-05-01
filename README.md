@@ -1,16 +1,23 @@
 # Filtr sklepów dla Pepper.pl
 
-Rozszerzenie do Firefoksa, które pozwala ukrywać oferty z wybranych sklepów na Pepper.pl.
+Nieoficjalne rozszerzenie do Firefoksa, które pozwala ukrywać oferty z wybranych sklepów na Pepper.pl.
+
+Rozszerzenie nie jest tworzone, wspierane ani zatwierdzone przez Pepper.pl.
+
+## Funkcje
+
+- Działa na stronach `https://www.pepper.pl/*`.
+- Odczytuje nazwę sklepu z danych `data-vue3` komponentu `ThreadMainListItemNormalizer`.
+- Używa pola `props.thread.merchant.merchantName`.
+- Ignoruje oferty bez danych `merchant`.
+- Ignoruje wpisy typu `Discussion`.
+- Dodaje przy ofertach przycisk `Filtruj sklep: Nazwa sklepu`.
+- Ukrywa oferty ze sklepów zapisanych na liście filtrów.
+- Popup pozwala ręcznie dodawać, usuwać i czyścić listę sklepów.
 
 ## Jak działa
 
-Rozszerzenie działa tylko na stronach:
-
-```text
-https://www.pepper.pl/*
-```
-
-Na listach ofert odczytuje nazwę sklepu z danych osadzonych przez Pepper w atrybucie `data-vue3` komponentu `ThreadMainListItemNormalizer`:
+Na listach ofert rozszerzenie odczytuje dane osadzone przez Pepper.pl w atrybucie `data-vue3`:
 
 ```text
 props.thread.merchant.merchantName
@@ -22,27 +29,33 @@ Jeśli oferta ma przypisany sklep, rozszerzenie dodaje przy niej przycisk:
 Filtruj sklep: Nazwa sklepu
 ```
 
-Kliknięcie przycisku zapisuje sklep na liście filtrów i ukrywa wszystkie oferty z tym samym sklepem. Oferty bez danych `merchant` są ignorowane.
-
-## Popup
-
-Popup rozszerzenia pozwala:
-
-- ręcznie dodać nazwę sklepu,
-- usunąć pojedynczy sklep z listy,
-- wyczyścić całą listę.
+Kliknięcie przycisku zapisuje sklep na liście filtrów i ukrywa wszystkie oferty z tym samym sklepem.
 
 Nazwy sklepów najlepiej dodawać dokładnie tak, jak występują na Pepper.pl, np. `Amazon.pl`, `Media Expert`, `ALDI`.
 
-## Przechowywanie danych
+## Prywatność
 
-Lista ukrytych sklepów jest zapisywana przez `browser.storage.sync`, dzięki czemu może synchronizować się przez konto Firefox/Mozilla między przeglądarkami.
+Lista ukrytych sklepów jest przechowywana przy użyciu `browser.storage.sync`, aby umożliwić synchronizację filtrów między urządzeniami użytkownika przez Firefox Sync. Rozszerzenie nie wysyła tych danych do autora dodatku, nie korzysta z własnego serwera, nie zawiera analityki i nie ładuje zdalnego kodu.
 
-Dla większej odporności rozszerzenie zapisuje też kopię w `browser.storage.local`. Jeśli Firefox Sync jest niedostępny, lista nadal działa lokalnie.
+Rozszerzenie używa `browser.storage.local` wyłącznie jako fallback/cache. Gdy Firefox Sync działa, `browser.storage.sync` jest źródłem prawdy, a lokalna kopia jest nadpisywana aktualną listą. Jeśli Firefox Sync jest chwilowo niedostępny albo zwróci błąd, rozszerzenie korzysta z lokalnej kopii.
 
-Rozszerzenie nie wysyła żadnych danych do własnych serwerów ani zewnętrznych usług. Ewentualna synchronizacja odbywa się wyłącznie przez mechanizm Firefox Sync.
+Rozszerzenie nie używa:
 
-## Instalacja tymczasowa w Firefoxie
+- `fetch()`,
+- `XMLHttpRequest`,
+- analityki,
+- telemetryki,
+- zewnętrznych skryptów,
+- zależności npm,
+- własnego backendu.
+
+## Synchronizacja
+
+Głównym miejscem zapisu listy filtrów jest `browser.storage.sync`. Jeśli użytkownik ma włączony Firefox Sync i synchronizację dodatków, lista może być dostępna na innych urządzeniach zalogowanych do tego samego konta Firefox/Mozilla.
+
+Kopia w `browser.storage.local` jest utrzymywana tylko po to, aby zwiększyć odporność dodatku na błędy lub niedostępność Sync.
+
+## Instalacja lokalna do testów
 
 1. Otwórz w Firefoxie:
 
@@ -55,6 +68,38 @@ Rozszerzenie nie wysyła żadnych danych do własnych serwerów ani zewnętrznyc
 4. Otwórz `https://www.pepper.pl/`.
 
 Po zmianach w plikach kliknij `Reload` przy dodatku w `about:debugging`, a potem odśwież kartę Pepper.pl.
+
+## Publikacja / pakowanie ZIP
+
+Do Mozilla Add-ons należy wysłać ZIP zawierający pliki dodatku bez katalogu nadrzędnego.
+
+Na Windows można użyć skryptu:
+
+```powershell
+.\scripts\package-amo.ps1
+```
+
+Skrypt tworzy plik:
+
+```text
+dist/filtr-sklepow-dla-pepper-0.1.0.zip
+```
+
+ZIP zawiera tylko pliki potrzebne do działania dodatku:
+
+- `manifest.json`
+- `content.js`
+- `popup.html`
+- `popup.js`
+- `popup.css`
+
+Do paczki nie trafiają katalogi `.git`, `.github`, `tests`, `node_modules`, `dist` ani pliki takie jak `README.md`, `LICENSE`, `package.json` i `package-lock.json`.
+
+## Nieoficjalny charakter dodatku
+
+Filtr sklepów dla Pepper.pl jest projektem niezależnym.
+
+Rozszerzenie nie jest tworzone, wspierane ani zatwierdzone przez Pepper.pl. Nazwa Pepper.pl jest używana wyłącznie do wskazania strony, na której działa dodatek.
 
 ## Debugowanie
 
@@ -86,15 +131,19 @@ Uruchomienie testów:
 
 ```bash
 node tests/content.test.js
+node tests/manifest.test.js
 ```
 
 Testy sprawdzają między innymi:
 
 - normalizację nazw sklepów,
-- łączenie list zapisanych w Firefox Sync i local storage,
+- zapis i odczyt przez Firefox Sync,
+- fallback do local storage,
 - parsowanie danych `data-vue3`,
 - wyszukiwanie `props.thread`,
-- ignorowanie ofert bez `merchant`.
+- ignorowanie ofert bez `merchant`,
+- ignorowanie wpisów typu `Discussion`,
+- deklaracje manifestu wymagane do publikacji.
 
 Te same testy są uruchamiane w GitHub Actions.
 
@@ -105,7 +154,8 @@ Te same testy są uruchamiane w GitHub Actions.
 - `popup.html` - HTML popupu.
 - `popup.js` - logika popupu i zarządzania listą sklepów.
 - `popup.css` - style popupu.
+- `scripts/package-amo.ps1` - skrypt tworzący ZIP do AMO.
 
 ## Licencja
 
-Projekt może być opublikowany na licencji MIT.
+Projekt jest udostępniany na licencji MIT. Szczegóły znajdują się w pliku `LICENSE`.
