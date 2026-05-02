@@ -5,6 +5,7 @@ const DEFAULT_SETTINGS = {
   alwaysFilterOnPageOpen: true,
   filtersEnabled: true,
   showFilteredAsDimmed: false,
+  showBelowThresholdAsDimmed: false,
   showFilteredAboveThreshold: false,
   hideUnfilteredBelowThreshold: false,
   showFilteredThreshold: null,
@@ -24,6 +25,9 @@ const settingsView = document.querySelector("#settings-view");
 const syncCheckbox = document.querySelector("#use-firefox-sync");
 const alwaysFilterCheckbox = document.querySelector("#always-filter-on-open");
 const dimmedCheckbox = document.querySelector("#show-filtered-as-dimmed");
+const showBelowThresholdAsDimmedCheckbox = document.querySelector(
+  "#show-below-threshold-as-dimmed"
+);
 const showFilteredAboveThresholdCheckbox = document.querySelector(
   "#show-filtered-above-threshold"
 );
@@ -36,6 +40,8 @@ const hideUnfilteredBelowThresholdCheckbox = document.querySelector(
 const hideUnfilteredThresholdInput = document.querySelector(
   "#hide-unfiltered-threshold"
 );
+let latestSettings = { ...DEFAULT_SETTINGS };
+let settingsSaveQueue = Promise.resolve();
 
 function normalizeText(value) {
   return String(value || "")
@@ -78,6 +84,7 @@ function normalizeSettings(value) {
     alwaysFilterOnPageOpen: value?.alwaysFilterOnPageOpen !== false,
     filtersEnabled: value?.filtersEnabled !== false,
     showFilteredAsDimmed: value?.showFilteredAsDimmed === true,
+    showBelowThresholdAsDimmed: value?.showBelowThresholdAsDimmed === true,
     showFilteredAboveThreshold: value?.showFilteredAboveThreshold === true,
     hideUnfilteredBelowThreshold: value?.hideUnfilteredBelowThreshold === true,
     showFilteredThreshold:
@@ -103,9 +110,11 @@ async function saveSettings(settings) {
 }
 
 function updateSettingsUi(settings) {
+  latestSettings = settings;
   syncCheckbox.checked = settings.useFirefoxSync;
   alwaysFilterCheckbox.checked = settings.alwaysFilterOnPageOpen;
   dimmedCheckbox.checked = settings.showFilteredAsDimmed;
+  showBelowThresholdAsDimmedCheckbox.checked = settings.showBelowThresholdAsDimmed;
   showFilteredAboveThresholdCheckbox.checked = settings.showFilteredAboveThreshold;
   showFilteredThresholdInput.value = settings.showFilteredThreshold ?? "";
   hideUnfilteredBelowThresholdCheckbox.checked = settings.hideUnfilteredBelowThreshold;
@@ -118,6 +127,44 @@ function updateSettingsUi(settings) {
     "aria-pressed",
     String(!settings.filtersEnabled)
   );
+}
+
+function collectSettingsFromUi(baseSettings = latestSettings) {
+  return {
+    ...baseSettings,
+    useFirefoxSync: syncCheckbox.checked,
+    alwaysFilterOnPageOpen: alwaysFilterCheckbox.checked,
+    showFilteredAsDimmed: dimmedCheckbox.checked,
+    showBelowThresholdAsDimmed: showBelowThresholdAsDimmedCheckbox.checked,
+    showFilteredAboveThreshold: showFilteredAboveThresholdCheckbox.checked,
+    hideUnfilteredBelowThreshold: hideUnfilteredBelowThresholdCheckbox.checked,
+    showFilteredThreshold: showFilteredThresholdInput.value,
+    hideUnfilteredThreshold: hideUnfilteredThresholdInput.value
+  };
+}
+
+async function applySavedSettings(settings) {
+  updateSettingsUi(settings);
+  renderStores(await getHiddenStores(settings));
+  await refreshActiveTabFilters();
+  return settings;
+}
+
+function queueSettingsSave(buildNextSettings) {
+  settingsSaveQueue = settingsSaveQueue
+    .catch(() => undefined)
+    .then(async () => {
+      const currentSettings = latestSettings || await getSettings();
+      const nextSettings = normalizeSettings(
+        typeof buildNextSettings === "function"
+          ? buildNextSettings(currentSettings)
+          : buildNextSettings
+      );
+
+      return applySavedSettings(await saveSettings(nextSettings));
+    });
+
+  return settingsSaveQueue;
 }
 
 function updateStorageStatus(syncAvailable, settings) {
@@ -161,6 +208,13 @@ async function refreshActiveTabFilters() {
   } catch {
     // The active tab may be unsupported or may not have the content script.
   }
+}
+
+async function saveThresholdSetting(settingKey, value) {
+  return queueSettingsSave((currentSettings) => ({
+    ...collectSettingsFromUi(currentSettings),
+    [settingKey]: value
+  }));
 }
 
 function showMainView() {
@@ -326,99 +380,62 @@ settingsToggle.addEventListener("click", showSettingsView);
 settingsBack.addEventListener("click", showMainView);
 
 syncCheckbox.addEventListener("change", async () => {
-  const currentSettings = await getSettings();
-  const settings = await saveSettings({
-    ...currentSettings,
-    useFirefoxSync: syncCheckbox.checked
+  await queueSettingsSave((currentSettings) => {
+    return collectSettingsFromUi(currentSettings);
   });
-
-  updateSettingsUi(settings);
-  renderStores(await getHiddenStores(settings));
-  await refreshActiveTabFilters();
 });
 
 alwaysFilterCheckbox.addEventListener("change", async () => {
-  const currentSettings = await getSettings();
-  const settings = await saveSettings({
-    ...currentSettings,
-    alwaysFilterOnPageOpen: alwaysFilterCheckbox.checked
+  await queueSettingsSave((currentSettings) => {
+    return collectSettingsFromUi(currentSettings);
   });
-
-  updateSettingsUi(settings);
-  renderStores(await getHiddenStores(settings));
-  await refreshActiveTabFilters();
 });
 
 dimmedCheckbox.addEventListener("change", async () => {
-  const currentSettings = await getSettings();
-  const settings = await saveSettings({
-    ...currentSettings,
-    showFilteredAsDimmed: dimmedCheckbox.checked
+  await queueSettingsSave((currentSettings) => {
+    return collectSettingsFromUi(currentSettings);
   });
-
-  updateSettingsUi(settings);
-  renderStores(await getHiddenStores(settings));
-  await refreshActiveTabFilters();
 });
 
-showFilteredThresholdInput.addEventListener("change", async () => {
-  const currentSettings = await getSettings();
-  const settings = await saveSettings({
-    ...currentSettings,
-    showFilteredThreshold: showFilteredThresholdInput.value
+showBelowThresholdAsDimmedCheckbox.addEventListener("change", async () => {
+  await queueSettingsSave((currentSettings) => {
+    return collectSettingsFromUi(currentSettings);
   });
+});
 
-  updateSettingsUi(settings);
-  renderStores(await getHiddenStores(settings));
-  await refreshActiveTabFilters();
+showFilteredThresholdInput.addEventListener("input", () => {
+  saveThresholdSetting("showFilteredThreshold", showFilteredThresholdInput.value);
+});
+
+showFilteredThresholdInput.addEventListener("change", () => {
+  saveThresholdSetting("showFilteredThreshold", showFilteredThresholdInput.value);
 });
 
 showFilteredAboveThresholdCheckbox.addEventListener("change", async () => {
-  const currentSettings = await getSettings();
-  const settings = await saveSettings({
-    ...currentSettings,
-    showFilteredAboveThreshold: showFilteredAboveThresholdCheckbox.checked
+  await queueSettingsSave((currentSettings) => {
+    return collectSettingsFromUi(currentSettings);
   });
-
-  updateSettingsUi(settings);
-  renderStores(await getHiddenStores(settings));
-  await refreshActiveTabFilters();
 });
 
 hideUnfilteredBelowThresholdCheckbox.addEventListener("change", async () => {
-  const currentSettings = await getSettings();
-  const settings = await saveSettings({
-    ...currentSettings,
-    hideUnfilteredBelowThreshold: hideUnfilteredBelowThresholdCheckbox.checked
+  await queueSettingsSave((currentSettings) => {
+    return collectSettingsFromUi(currentSettings);
   });
-
-  updateSettingsUi(settings);
-  renderStores(await getHiddenStores(settings));
-  await refreshActiveTabFilters();
 });
 
-hideUnfilteredThresholdInput.addEventListener("change", async () => {
-  const currentSettings = await getSettings();
-  const settings = await saveSettings({
-    ...currentSettings,
-    hideUnfilteredThreshold: hideUnfilteredThresholdInput.value
-  });
+hideUnfilteredThresholdInput.addEventListener("input", () => {
+  saveThresholdSetting("hideUnfilteredThreshold", hideUnfilteredThresholdInput.value);
+});
 
-  updateSettingsUi(settings);
-  renderStores(await getHiddenStores(settings));
-  await refreshActiveTabFilters();
+hideUnfilteredThresholdInput.addEventListener("change", () => {
+  saveThresholdSetting("hideUnfilteredThreshold", hideUnfilteredThresholdInput.value);
 });
 
 filterToggleButton.addEventListener("click", async () => {
-  const currentSettings = await getSettings();
-  const settings = await saveSettings({
-    ...currentSettings,
+  await queueSettingsSave((currentSettings) => ({
+    ...collectSettingsFromUi(currentSettings),
     filtersEnabled: !currentSettings.filtersEnabled
-  });
-
-  updateSettingsUi(settings);
-  renderStores(await getHiddenStores(settings));
-  await refreshActiveTabFilters();
+  }));
 });
 
 async function refreshPopup() {

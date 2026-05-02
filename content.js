@@ -4,6 +4,7 @@ const HIDDEN_KEY = "pepperStoreFilterHidden";
 const DIMMED_KEY = "pepperStoreFilterDimmed";
 const DIMMED_CLASS = "pepper-store-filter-dimmed";
 const DIMMED_NOTICE_SELECTOR = ".pepper-store-filter-dimmed-notice";
+const LOADING_CLASS = "pepper-store-filter-loading";
 const NORMALIZER_SELECTOR = '[data-vue3*="ThreadMainListItemNormalizer"]';
 const CARD_SELECTOR = 'article[id^="thread_"], article.thread, [data-t="thread"]';
 const BUTTON_SELECTOR = ".pepper-store-filter-button";
@@ -15,6 +16,7 @@ const DEFAULT_SETTINGS = {
   alwaysFilterOnPageOpen: true,
   filtersEnabled: true,
   showFilteredAsDimmed: false,
+  showBelowThresholdAsDimmed: false,
   showFilteredAboveThreshold: false,
   hideUnfilteredBelowThreshold: false,
   showFilteredThreshold: null,
@@ -24,6 +26,7 @@ const DEFAULT_SETTINGS = {
 let hiddenStores = [];
 let filtersEnabled = true;
 let showFilteredAsDimmed = false;
+let showBelowThresholdAsDimmed = false;
 let showFilteredAboveThreshold = false;
 let hideUnfilteredBelowThreshold = false;
 let showFilteredThreshold = null;
@@ -83,6 +86,21 @@ function normalizeThresholdValue(value) {
   return normalizedValue;
 }
 
+function normalizeDealTemperature(value) {
+  if (value === "" || value === null || value === undefined) {
+    return null;
+  }
+
+  const normalizedValue =
+    typeof value === "number" ? value : Number(String(value).replace(",", "."));
+
+  if (!Number.isFinite(normalizedValue)) {
+    return null;
+  }
+
+  return normalizedValue;
+}
+
 function normalizeLinkHostName(value) {
   return normalizeStoreName(value)
     .replace(/^https?:\/\//i, "")
@@ -132,6 +150,7 @@ function normalizeSettings(value) {
     alwaysFilterOnPageOpen: value?.alwaysFilterOnPageOpen !== false,
     filtersEnabled: value?.filtersEnabled !== false,
     showFilteredAsDimmed: value?.showFilteredAsDimmed === true,
+    showBelowThresholdAsDimmed: value?.showBelowThresholdAsDimmed === true,
     showFilteredAboveThreshold: value?.showFilteredAboveThreshold === true,
     hideUnfilteredBelowThreshold: value?.hideUnfilteredBelowThreshold === true,
     showFilteredThreshold:
@@ -313,12 +332,29 @@ function getMerchantNameFromCardText(card) {
   return cleanMerchantCandidate(match[1]);
 }
 
+function getTemperatureFromCardText(card) {
+  const noticeText = normalizeStoreName(
+    card?.querySelector?.(DIMMED_NOTICE_SELECTOR)?.textContent
+  );
+  const text = normalizeStoreName(card?.textContent);
+  const searchableText = noticeText ? text.replace(noticeText, " ") : text;
+  const match = searchableText.match(/(-?\d+(?:[.,]\d+)?)\s*\u00B0/);
+
+  if (!match) {
+    return null;
+  }
+
+  return normalizeDealTemperature(match[1]);
+}
+
 function createItemFromThread(card, normalizer, thread) {
   const merchantName =
     normalizeStoreName(thread?.merchant?.merchantName) ||
     normalizeLinkHostName(thread?.linkHost) ||
     getMerchantNameFromCardText(card);
-  const temperature = normalizeThresholdValue(thread?.temperature);
+  const temperature =
+    normalizeDealTemperature(thread?.temperature) ??
+    getTemperatureFromCardText(card);
 
   if (!merchantName || thread?.type === "Discussion") {
     return null;
@@ -389,42 +425,50 @@ function removeDimmedNotice(card) {
   }
 }
 
-function createDimmedNotice(merchant) {
+function createDimmedNotice({ badgeText, noticeKey, merchant = null, onRemove = null }) {
   const notice = document.createElement("div");
-  const label = document.createElement("span");
-  const button = document.createElement("button");
+  const badge = document.createElement("span");
 
   notice.className = "pepper-store-filter-dimmed-notice";
-  notice.dataset.store = merchant.name;
-  label.textContent = `Filtered by ${PLUGIN_NAME}`;
-  button.type = "button";
-  button.textContent = "Remove filter";
-  button.title = `Remove filter for ${merchant.name}`;
+  notice.dataset.noticeKey = noticeKey;
+  if (merchant) {
+    notice.dataset.store = merchant.name;
+  }
 
-  button.addEventListener("click", async (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
+  badge.className = "pepper-store-filter-dimmed-badge";
+  badge.textContent = badgeText;
+  notice.appendChild(badge);
 
-    hiddenStores = await removeHiddenStore(merchant.name);
-    applyFilters();
-  });
+  if (onRemove && merchant) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Remove filter";
+    button.title = `Remove filter for ${merchant.name}`;
 
-  notice.appendChild(label);
-  notice.appendChild(button);
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      await onRemove();
+    });
+
+    notice.appendChild(button);
+  }
+
   return notice;
 }
 
-function ensureDimmedNotice(card, merchant) {
+function ensureDimmedNotice(card, config) {
   const existingNotice = card.querySelector?.(DIMMED_NOTICE_SELECTOR);
 
-  if (existingNotice?.dataset?.store === merchant.name) {
+  if (existingNotice?.dataset?.noticeKey === config.noticeKey) {
     return;
   }
 
   removeDimmedNotice(card);
 
-  const notice = createDimmedNotice(merchant);
+  const notice = createDimmedNotice(config);
   const noticeParent =
     (card.matches?.(".threadListCard") ? card : null) ||
     card.querySelector?.(".threadListCard") ||
@@ -438,6 +482,10 @@ function ensureDimmedNotice(card, merchant) {
   } else {
     noticeParent.appendChild?.(notice);
   }
+}
+
+function setInitialLoadingState(isLoading) {
+  document.documentElement?.classList?.toggle?.(LOADING_CLASS, isLoading);
 }
 
 function hideCard(card) {
@@ -454,14 +502,41 @@ function hideCard(card) {
   }
 }
 
-function dimCard(card, merchant) {
+function getStoreDimmedNoticeConfig(merchant) {
+  return {
+    badgeText: `${PLUGIN_NAME}: Filtered by store filter`,
+    noticeKey: `store:${normalizeText(merchant.name)}`,
+    merchant,
+    onRemove: async () => {
+      hiddenStores = await removeHiddenStore(merchant.name);
+      applyFilters();
+    }
+  };
+}
+
+function getThresholdDimmedNoticeConfig() {
+  const thresholdLabel = hideUnfilteredThreshold === null
+    ? `${PLUGIN_NAME}: Filtered by threshold`
+    : `${PLUGIN_NAME}: Filtered by threshold < ${hideUnfilteredThreshold}\u00B0`;
+
+  return {
+    badgeText: thresholdLabel,
+    noticeKey: `threshold:${hideUnfilteredThreshold ?? "off"}`
+  };
+}
+
+function dimCard(card, noticeConfig = null) {
   if (card.dataset) {
     delete card.dataset[HIDDEN_KEY];
     card.dataset[DIMMED_KEY] = "true";
   }
 
   card.classList?.add(DIMMED_CLASS);
-  ensureDimmedNotice(card, merchant);
+  if (noticeConfig) {
+    ensureDimmedNotice(card, noticeConfig);
+  } else {
+    removeDimmedNotice(card);
+  }
 
   if (card.style) {
     card.style.display = "";
@@ -595,8 +670,7 @@ function applyFilters() {
       isFilteredStore &&
       showFilteredAboveThreshold &&
       isTemperatureAtOrAboveThreshold(item.temperature);
-    const shouldHideUnfilteredStore =
-      !isFilteredStore &&
+    const shouldHideBelowThreshold =
       hideUnfilteredBelowThreshold &&
       isTemperatureBelowThreshold(item.temperature);
 
@@ -605,9 +679,9 @@ function applyFilters() {
       continue;
     }
 
-    if (isFilteredStore) {
-      if (showFilteredAsDimmed) {
-        dimCard(item.card, item.merchant);
+    if (shouldHideBelowThreshold) {
+      if (showBelowThresholdAsDimmed) {
+        dimCard(item.card, getThresholdDimmedNoticeConfig());
       } else {
         hideCard(item.card);
       }
@@ -616,8 +690,13 @@ function applyFilters() {
       continue;
     }
 
-    if (shouldHideUnfilteredStore) {
-      hideCard(item.card);
+    if (isFilteredStore) {
+      if (showFilteredAsDimmed) {
+        dimCard(item.card, getStoreDimmedNoticeConfig(item.merchant));
+      } else {
+        hideCard(item.card);
+      }
+
       hiddenCount += 1;
       continue;
     }
@@ -631,6 +710,7 @@ function applyFilters() {
     hidden: hiddenCount,
     filtersEnabled,
     showFilteredAsDimmed,
+    showBelowThresholdAsDimmed,
     showFilteredAboveThreshold,
     hideUnfilteredBelowThreshold,
     showFilteredThreshold,
@@ -648,6 +728,7 @@ function applyFilters() {
       hiddenOffers: hiddenCount,
       filtersEnabled,
       showFilteredAsDimmed,
+      showBelowThresholdAsDimmed,
       showFilteredAboveThreshold,
       hideUnfilteredBelowThreshold,
       showFilteredThreshold,
@@ -677,6 +758,10 @@ function injectStyles() {
   const style = document.createElement("style");
   style.id = "pepper-store-filter-styles";
   style.textContent = `
+    .${LOADING_CLASS} :is(${CARD_SELECTOR}) {
+      visibility: hidden !important;
+    }
+
     .pepper-store-filter-wrapper {
       display: flex;
       align-items: center;
@@ -722,21 +807,26 @@ function injectStyles() {
       align-items: center;
       justify-content: space-between;
       gap: 12px;
+      flex-wrap: wrap;
       margin: 0 0 10px !important;
-      padding: 7px 10px;
-      border: 1px solid rgba(255, 100, 0, 0.28);
-      border-radius: 8px;
-      color: #f2f4f7;
-      background: rgba(255, 100, 0, 0.14);
+      padding: 0;
       font-family: inherit;
       font-size: 12px;
       font-weight: 700;
       line-height: 1.3;
     }
 
-    .pepper-store-filter-dimmed-notice span {
-      min-width: 0;
+    .pepper-store-filter-dimmed-badge {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
       overflow: hidden;
+      padding: 5px 10px;
+      border: 1px solid #de5a00;
+      border-radius: 999px;
+      color: #fff;
+      background: #ff6400;
+      box-shadow: 0 1px 2px rgba(26, 33, 43, 0.14);
       text-overflow: ellipsis;
       white-space: nowrap;
     }
@@ -835,6 +925,7 @@ async function refreshStateFromStorage(resetFiltersForPage = false) {
 
   filtersEnabled = settings.filtersEnabled;
   showFilteredAsDimmed = settings.showFilteredAsDimmed;
+  showBelowThresholdAsDimmed = settings.showBelowThresholdAsDimmed;
   showFilteredAboveThreshold = settings.showFilteredAboveThreshold;
   hideUnfilteredBelowThreshold = settings.hideUnfilteredBelowThreshold;
   showFilteredThreshold = settings.showFilteredThreshold;
@@ -849,7 +940,11 @@ async function loadHiddenStores() {
     normalizers: document.querySelectorAll(NORMALIZER_SELECTOR).length
   });
 
-  await refreshStateFromStorage(true);
+  try {
+    await refreshStateFromStorage(true);
+  } finally {
+    setInitialLoadingState(false);
+  }
 }
 
 function observePageChanges() {
@@ -906,6 +1001,7 @@ browser.runtime?.onMessage?.addListener((message) => {
   return refreshStateFromStorage();
 });
 
+setInitialLoadingState(true);
 injectStyles();
 loadHiddenStores();
 

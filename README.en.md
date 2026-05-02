@@ -97,8 +97,9 @@ The popup has a settings view opened with the gear button.
 - `Show filtered deals as compact previews` - keeps matching deals in the listing as compact previews instead of hiding them completely.
 - `Show filtered deals above this threshold` - shows deals from filtered stores when their temperature is equal to or higher than the configured threshold.
 - `Show filtered deals threshold` - sets the temperature threshold for showing deals from filtered stores.
-- `Hide other deals below this threshold` - hides deals from stores outside the filter list when their temperature drops below the configured threshold.
-- `Hide other deals threshold` - sets the temperature threshold for hiding deals from stores outside the filter list.
+- `Hide deals below this threshold` - hides deals when their temperature drops below the configured threshold.
+- `Show deals below threshold as compact previews` - keeps below-threshold deals as dimmed compact previews instead of hiding them completely.
+- `Hide deals threshold` - sets the temperature threshold for hiding deals with too low a temperature.
 
 The `Disable filters` / `Enable filters` button in the main popup view temporarily shows or hides matching deals without clearing the saved store list.
 

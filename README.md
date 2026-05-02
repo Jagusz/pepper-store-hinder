@@ -97,8 +97,9 @@ Popup ma widok ustawień otwierany ikoną koła zębatego.
 - `Show filtered deals as compact previews` - zamiast ukrywać pasujące oferty, zostawia je na liście jako kompaktowy podgląd.
 - `Show filtered deals above this threshold` - pokazuje oferty z filtrowanych sklepów, jeśli ich temperatura jest równa ustawionemu progowi albo go przekracza.
 - `Show filtered deals threshold` - ustawia próg temperatury dla pokazywania ofert z filtrowanych sklepów.
-- `Hide other deals below this threshold` - ukrywa oferty ze sklepów spoza listy filtrów, jeśli ich temperatura spada poniżej ustawionego progu.
-- `Hide other deals threshold` - ustawia próg temperatury dla ukrywania ofert ze sklepów spoza listy filtrów.
+- `Hide deals below this threshold` - ukrywa oferty, jeśli ich temperatura spada poniżej ustawionego progu.
+- `Show deals below threshold as compact previews` - zamiast całkowicie ukrywać oferty poniżej progu, zostawia je na liście jako wyszarzony podgląd.
+- `Hide deals threshold` - ustawia próg temperatury dla ukrywania ofert o zbyt niskiej temperaturze.
 
 Przełącznik `Disable filters` / `Enable filters` w głównym widoku popupu tymczasowo pokazuje albo ukrywa pasujące oferty bez usuwania zapisanej listy sklepów.
 
