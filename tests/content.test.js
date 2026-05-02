@@ -729,9 +729,9 @@ test("refreshStateFromStorage shows hidden offers when filters are disabled", as
   assert.equal(card.dataset.pepperStoreFilterHidden, undefined);
 });
 
-// Verifies filtered deals can stay visible in a compact dimmed state when the
+// Verifies filtered deals can stay visible as compact previews when the
 // user chooses not to fully hide matching stores.
-test("refreshStateFromStorage dims hidden offers when dimmed mode is enabled", async () => {
+test("refreshStateFromStorage previews hidden offers when compact preview mode is enabled", async () => {
   const classNames = new Set();
   const card = {
     appendChild: () => {},
@@ -816,9 +816,9 @@ test("refreshStateFromStorage dims hidden offers when dimmed mode is enabled", a
   assert.equal(classNames.has("pepper-store-filter-dimmed"), true);
 });
 
-// Verifies dimmed filtered offers explain why they are compacted and let the
+// Verifies compact filtered previews explain why they are compacted and let the
 // user remove that store filter without opening the popup.
-test("dimmed filtered offers include a remove filter action", async () => {
+test("compact filtered previews include a remove filter action", async () => {
   const savedStoreLists = [];
   const classNames = new Set();
   let notice = null;

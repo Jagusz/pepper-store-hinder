@@ -10,8 +10,8 @@
 - Dodano przełącznik `Disable filters` / `Enable filters`, który tymczasowo włącza lub wyłącza filtrowanie bez usuwania zapisanej listy sklepów.
 - Dodano ustawienie `Firefox Sync`, które pozwala wybrać zapis przez Firefox Sync albo zapis tylko lokalny na bieżącym urządzeniu.
 - Dodano ustawienie `Always filter when opening a page`, które automatycznie przywraca filtrowanie po otwarciu obsługiwanej strony.
-- Dodano ustawienie `Show filtered deals as dimmed`, które pokazuje przefiltrowane oferty jako kompaktowe, przygaszone karty zamiast całkowicie je ukrywać.
-- Przygaszone karty pokazują komunikat `Filtered by Deal Store Filter` oraz przycisk `Remove filter` usuwający dany sklep z listy filtrów.
+- Dodano ustawienie `Show filtered deals as compact previews`, które pokazuje przefiltrowane oferty jako kompaktowy podgląd zamiast całkowicie je ukrywać.
+- Kompaktowy podgląd pokazuje komunikat `Filtered by Deal Store Filter` oraz przycisk `Remove filter` usuwający dany sklep z listy filtrów.
 - Zmiany listy filtrów i ustawień próbują odświeżyć aktywną kartę od razu, jeśli działa na niej content script rozszerzenia.
 
 Nieoficjalne rozszerzenie do Firefoksa, które pozwala ukrywać oferty z wybranych sklepów na obsługiwanych stronach z promocjami.
@@ -94,7 +94,7 @@ Popup ma widok ustawień otwierany ikoną koła zębatego.
 
 - `Firefox Sync` - zapisuje listę filtrów w `browser.storage.sync` i utrzymuje lokalną kopię awaryjną. Po wyłączeniu lista jest zapisywana tylko lokalnie na bieżącym urządzeniu.
 - `Always filter when opening a page` - po otwarciu obsługiwanej strony automatycznie włącza filtrowanie, nawet jeśli wcześniej zostało tymczasowo wyłączone.
-- `Show filtered deals as dimmed` - zamiast ukrywać pasujące oferty, zostawia je na liście jako kompaktowe, przygaszone karty.
+- `Show filtered deals as compact previews` - zamiast ukrywać pasujące oferty, zostawia je na liście jako kompaktowy podgląd.
 
 Przełącznik `Disable filters` / `Enable filters` w głównym widoku popupu tymczasowo pokazuje albo ukrywa pasujące oferty bez usuwania zapisanej listy sklepów.
 

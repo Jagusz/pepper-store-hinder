@@ -10,8 +10,8 @@
 - Added a `Disable filters` / `Enable filters` toggle for temporarily turning filtering on or off without clearing the saved store list.
 - Added a `Firefox Sync` setting for choosing between Firefox Sync storage and local-only storage on the current device.
 - Added an `Always filter when opening a page` setting that restores filtering automatically when a supported page opens.
-- Added a `Show filtered deals as dimmed` setting that keeps filtered deals visible as compact dimmed cards instead of hiding them completely.
-- Dimmed cards show a `Filtered by Deal Store Filter` notice and a `Remove filter` button for removing that store from the filter list.
+- Added a `Show filtered deals as compact previews` setting that keeps filtered deals visible as compact previews instead of hiding them completely.
+- Compact previews show a `Filtered by Deal Store Filter` notice and a `Remove filter` button for removing that store from the filter list.
 - Store-list and settings changes try to refresh the active tab immediately when the extension content script is available on that tab.
 
 An unofficial Firefox extension that lets you hide deals from selected stores on supported shopping and deal websites.
@@ -94,7 +94,7 @@ The popup has a settings view opened with the gear button.
 
 - `Firefox Sync` - stores the filter list in `browser.storage.sync` and keeps a local fallback copy. When disabled, the list is stored only locally on the current device.
 - `Always filter when opening a page` - automatically turns filtering back on when a supported page opens, even if filtering was temporarily disabled earlier.
-- `Show filtered deals as dimmed` - keeps matching deals in the listing as compact dimmed cards instead of hiding them completely.
+- `Show filtered deals as compact previews` - keeps matching deals in the listing as compact previews instead of hiding them completely.
 
 The `Disable filters` / `Enable filters` button in the main popup view temporarily shows or hides matching deals without clearing the saved store list.
 
