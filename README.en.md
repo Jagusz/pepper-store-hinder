@@ -95,6 +95,11 @@ The popup has a settings view opened with the gear button.
 - `Firefox Sync` - stores the filter list in `browser.storage.sync` and keeps a local fallback copy. When disabled, the list is stored only locally on the current device.
 - `Always filter when opening a page` - automatically turns filtering back on when a supported page opens, even if filtering was temporarily disabled earlier.
 - `Show filtered deals as compact previews` - keeps matching deals in the listing as compact previews instead of hiding them completely.
+- `Show filtered deals above this threshold` - shows deals from filtered stores when their temperature is equal to or higher than the configured threshold.
+- `Show filtered deals threshold` - sets the temperature threshold for showing deals from filtered stores.
+- `Hide deals below this threshold` - hides deals when their temperature drops below the configured threshold.
+- `Show deals below threshold as compact previews` - keeps below-threshold deals as dimmed compact previews instead of hiding them completely.
+- `Hide deals threshold` - sets the temperature threshold for hiding deals with too low a temperature.
 
 The `Disable filters` / `Enable filters` button in the main popup view temporarily shows or hides matching deals without clearing the saved store list.
 

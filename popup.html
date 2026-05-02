@@ -60,6 +60,44 @@
             <input id="show-filtered-as-dimmed" type="checkbox">
             <span>Show filtered deals as compact previews</span>
           </label>
+          <div class="settings-option">
+            <label class="checkbox-row" for="show-filtered-above-threshold">
+              <input id="show-filtered-above-threshold" type="checkbox">
+              <span>Show filtered deals above this threshold</span>
+            </label>
+            <label class="settings-field" for="show-filtered-threshold">
+              <span>Show filtered deals threshold</span>
+              <input
+                id="show-filtered-threshold"
+                type="number"
+                min="0"
+                step="1"
+                inputmode="numeric"
+                placeholder="200"
+              >
+            </label>
+          </div>
+          <div class="settings-option">
+            <label class="checkbox-row" for="hide-unfiltered-below-threshold">
+              <input id="hide-unfiltered-below-threshold" type="checkbox">
+              <span>Hide deals below this threshold</span>
+            </label>
+            <label class="settings-field" for="hide-unfiltered-threshold">
+              <span>Hide deals threshold</span>
+              <input
+                id="hide-unfiltered-threshold"
+                type="number"
+                min="0"
+                step="1"
+                inputmode="numeric"
+                placeholder="50"
+              >
+            </label>
+            <label class="checkbox-row" for="show-below-threshold-as-dimmed">
+              <input id="show-below-threshold-as-dimmed" type="checkbox">
+              <span>Show deals below threshold as compact previews</span>
+            </label>
+          </div>
         </div>
         <button id="clear-stores" class="secondary danger" type="button">Clear list</button>
       </section>

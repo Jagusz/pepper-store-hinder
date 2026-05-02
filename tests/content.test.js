@@ -103,6 +103,114 @@ test("normalizeText lowercases and collapses whitespace", () => {
   assert.equal(context.normalizeText("  Amazon.PL  "), "amazon.pl");
 });
 
+test("setInitialLoadingState toggles the initial loading class", () => {
+  const calls = [];
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {},
+        classList: {
+          toggle: (className, enabled) => calls.push([className, enabled])
+        }
+      },
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: createMockElement
+    }
+  });
+
+  context.setInitialLoadingState(true);
+  context.setInitialLoadingState(false);
+
+  assert.equal(
+    JSON.stringify(calls.slice(-2)),
+    JSON.stringify([
+      ["pepper-store-filter-loading", true],
+      ["pepper-store-filter-loading", false]
+    ])
+  );
+});
+
+test("injectStyles scopes the initial loading selector to the loading class", () => {
+  let injectedStyle = null;
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: (element) => {
+          injectedStyle = element;
+        },
+        classList: {
+          toggle: () => {}
+        }
+      },
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: createMockElement
+    }
+  });
+
+  context.injectStyles();
+
+  assert.ok(injectedStyle);
+  assert.equal(
+    injectedStyle.textContent.includes(
+      '.pepper-store-filter-loading :is(article[id^="thread_"], article.thread, [data-t="thread"])'
+    ),
+    true
+  );
+});
+
+// Verifies threshold values accept clean numbers and treat empty or invalid
+// values as disabled, so settings can be stored safely.
+test("normalizeThresholdValue parses valid numbers and rejects invalid values", () => {
+  const context = loadContentScript();
+
+  assert.equal(context.normalizeThresholdValue("200"), 200);
+  assert.equal(context.normalizeThresholdValue("9.5"), 9.5);
+  assert.equal(context.normalizeThresholdValue(""), null);
+  assert.equal(context.normalizeThresholdValue("-1"), null);
+  assert.equal(context.normalizeThresholdValue("abc"), null);
+});
+
+// Verifies deal temperatures may legitimately be below zero on Pepper, so the
+// content script must keep them instead of treating them as missing data.
+test("normalizeDealTemperature accepts negative listing values", () => {
+  const context = loadContentScript();
+
+  assert.equal(context.normalizeDealTemperature("55.5"), 55.5);
+  assert.equal(context.normalizeDealTemperature("-0.59"), -0.59);
+  assert.equal(context.normalizeDealTemperature("abc"), null);
+});
+
+// Verifies the new split threshold fields still accept the legacy shared
+// threshold value, so early testers keep the same behavior after the rename.
+test("normalizeSettings falls back to the legacy shared threshold", () => {
+  const context = loadContentScript();
+
+  assert.equal(
+    JSON.stringify(
+      context.normalizeSettings({
+        showFilteredAboveThreshold: true,
+        hideUnfilteredBelowThreshold: true,
+        temperatureThreshold: 150
+      })
+    ),
+    JSON.stringify({
+      useFirefoxSync: true,
+      alwaysFilterOnPageOpen: true,
+      filtersEnabled: true,
+      showFilteredAsDimmed: false,
+      showBelowThresholdAsDimmed: false,
+      showFilteredAboveThreshold: true,
+      hideUnfilteredBelowThreshold: true,
+      showFilteredThreshold: 150,
+      hideUnfilteredThreshold: 150
+    })
+  );
+});
+
 // Verifies the extension can combine lists without showing duplicate stores.
 test("mergeStoreLists removes duplicates case-insensitively", () => {
   const context = loadContentScript();
@@ -369,6 +477,213 @@ test("getNormalizerItems ignores discussion threads", () => {
   context.document.querySelectorAll = () => [normalizer];
 
   assert.equal(JSON.stringify(context.getNormalizerItems()), JSON.stringify([]));
+});
+
+// Verifies structured thread data keeps the deal temperature so threshold-based
+// filtering can be applied later in the content script.
+test("getNormalizerItems keeps numeric temperature from thread data", () => {
+  const card = {
+    textContent: "",
+    querySelector: () => null,
+    querySelectorAll: () => []
+  };
+  const normalizer = {
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1272072",
+            type: "Deal",
+            merchant: {
+              merchantName: "Amazon.pl"
+            },
+            temperature: 321.5
+          }
+        }
+      }),
+    closest: () => card
+  };
+  const context = loadContentScript();
+
+  context.document.querySelectorAll = (selector) => {
+    if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+      return [normalizer];
+    }
+
+    return [];
+  };
+
+  assert.equal(
+    JSON.stringify(context.getNormalizerItems().map((item) => item.temperature)),
+    JSON.stringify([321.5])
+  );
+});
+
+// Verifies cold deals keep negative temperatures from Pepper, which the
+// separate below-threshold rule needs in the live listing.
+test("getNormalizerItems keeps negative temperatures from thread data", () => {
+  const card = {
+    textContent: "",
+    querySelector: () => null,
+    querySelectorAll: () => []
+  };
+  const normalizer = {
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1272564",
+            type: "Deal",
+            merchant: {
+              merchantName: "Hebe"
+            },
+            temperature: -0.59
+          }
+        }
+      }),
+    closest: () => card
+  };
+  const context = loadContentScript();
+
+  context.document.querySelectorAll = (selector) => {
+    if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+      return [normalizer];
+    }
+
+    return [];
+  };
+
+  assert.equal(
+    JSON.stringify(context.getNormalizerItems().map((item) => item.temperature)),
+    JSON.stringify([-0.59])
+  );
+});
+
+// Verifies the script can still read the visible temperature badge when Pepper
+// omits the structured temperature field from the thread payload.
+test("getNormalizerItems falls back to the rendered card temperature badge", () => {
+  const card = {
+    textContent: "28° Dostępne w myjki.com Dodane przez Dakn_lwd",
+    querySelector: () => null,
+    querySelectorAll: () => []
+  };
+  const normalizer = {
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1275001",
+            type: "Deal",
+            merchant: {
+              merchantName: "myjki.com"
+            },
+            temperature: null
+          }
+        }
+      }),
+    closest: () => card
+  };
+  const context = loadContentScript();
+
+  context.document.querySelectorAll = (selector) => {
+    if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+      return [normalizer];
+    }
+
+    return [];
+  };
+
+  assert.equal(
+    JSON.stringify(context.getNormalizerItems().map((item) => item.temperature)),
+    JSON.stringify([28])
+  );
+});
+
+test("getNormalizerItems reads the rendered temperature badge without spacing", () => {
+  const card = {
+    textContent: "28°Dodane 1 godz. temu Dostępne w myjki.com",
+    querySelector: () => null,
+    querySelectorAll: () => []
+  };
+  const normalizer = {
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1275002",
+            type: "Deal",
+            merchant: {
+              merchantName: "myjki.com"
+            },
+            temperature: null
+          }
+        }
+      }),
+    closest: () => card
+  };
+  const context = loadContentScript();
+
+  context.document.querySelectorAll = (selector) => {
+    if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+      return [normalizer];
+    }
+
+    return [];
+  };
+
+  assert.equal(
+    JSON.stringify(context.getNormalizerItems().map((item) => item.temperature)),
+    JSON.stringify([28])
+  );
+});
+
+test("getNormalizerItems ignores the plugin notice when reading temperature", () => {
+  const notice = {
+    textContent: "Deal Store Filter: Filtered by threshold < 50°"
+  };
+  const card = {
+    textContent:
+      "Deal Store Filter: Filtered by threshold < 50° 28° Dodane 1 godz. temu Dostępne w myjki.com",
+    querySelector: (selector) => {
+      return selector === ".pepper-store-filter-dimmed-notice" ? notice : null;
+    },
+    querySelectorAll: () => []
+  };
+  const normalizer = {
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1275003",
+            type: "Deal",
+            merchant: {
+              merchantName: "myjki.com"
+            },
+            temperature: null
+          }
+        }
+      }),
+    closest: () => card
+  };
+  const context = loadContentScript();
+
+  context.document.querySelectorAll = (selector) => {
+    if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+      return [normalizer];
+    }
+
+    return [];
+  };
+
+  assert.equal(
+    JSON.stringify(context.getNormalizerItems().map((item) => item.temperature)),
+    JSON.stringify([28])
+  );
 });
 
 // Verifies the filter button is inserted into the stable card body before the
@@ -954,7 +1269,10 @@ test("compact filtered previews include a remove filter action", async () => {
 
   assert.ok(notice);
   assert.equal(noticeParent, "threadListCard");
-  assert.equal(notice.children[0].textContent, "Filtered by Deal Store Filter");
+  assert.equal(
+    notice.children[0].textContent,
+    "Deal Store Filter: Filtered by store filter"
+  );
   assert.equal(notice.children[1].textContent, "Remove filter");
 
   await notice.children[1].addEventListenerCalls[0][1]({
@@ -969,6 +1287,377 @@ test("compact filtered previews include a remove filter action", async () => {
   );
   assert.equal(card.dataset.pepperStoreFilterDimmed, undefined);
   assert.equal(classNames.has("pepper-store-filter-dimmed"), false);
+});
+
+// Verifies filtered stores can stay visible when their temperature reaches the
+// configured threshold assigned to the filtered-store rule.
+test("refreshStateFromStorage shows filtered stores above the configured threshold", async () => {
+  const card = {
+    appendChild: () => {},
+    classList: {
+      add: () => {},
+      remove: () => {}
+    },
+    dataset: {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    style: {
+      display: "none"
+    }
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1274010",
+            type: "Deal",
+            merchant: {
+              merchantName: "Media Expert"
+            },
+            temperature: 250
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement: createMockElement
+    },
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: ["Media Expert"] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return {
+                settings: {
+                  useFirefoxSync: true,
+                  alwaysFilterOnPageOpen: true,
+                  filtersEnabled: true,
+                  showFilteredAboveThreshold: true,
+                  showFilteredThreshold: 200
+                }
+              };
+            }
+
+            return { hiddenStores: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: () => {}
+        }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(card.style.display, "");
+  assert.equal(card.dataset.pepperStoreFilterHidden, undefined);
+  assert.equal(card.dataset.pepperStoreFilterDimmed, undefined);
+});
+
+// Verifies deals can be hidden globally when their temperature drops below the
+// configured threshold, regardless of merchant filtering.
+test("refreshStateFromStorage hides deals below the configured threshold", async () => {
+  const card = {
+    appendChild: () => {},
+    classList: {
+      add: () => {},
+      remove: () => {}
+    },
+    dataset: {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    style: {
+      display: ""
+    }
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1274011",
+            type: "Deal",
+            merchant: {
+              merchantName: "Amazon.pl"
+            },
+            temperature: 49
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement: createMockElement
+    },
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: ["Media Expert"] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return {
+                settings: {
+                  useFirefoxSync: true,
+                  alwaysFilterOnPageOpen: true,
+                  filtersEnabled: true,
+                  hideUnfilteredBelowThreshold: true,
+                  hideUnfilteredThreshold: 50
+                }
+              };
+            }
+
+            return { hiddenStores: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: () => {}
+        }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(card.style.display, "none");
+  assert.equal(card.dataset.pepperStoreFilterHidden, "true");
+});
+
+test("refreshStateFromStorage dims deals below the configured threshold when enabled", async () => {
+  const classNames = new Set();
+  let notice = null;
+  const card = {
+    appendChild: () => {},
+    classList: {
+      add: (className) => classNames.add(className),
+      remove: (className) => classNames.delete(className)
+    },
+    dataset: {},
+    querySelector: (selector) => {
+      if (selector === ".pepper-store-filter-dimmed-notice") {
+        return notice;
+      }
+
+      if (selector === ".threadListCard") {
+        return {
+          prepend: (child) => {
+            if (child.className === "pepper-store-filter-dimmed-notice") {
+              notice = child;
+            }
+          }
+        };
+      }
+
+      return null;
+    },
+    querySelectorAll: () => [],
+    style: {
+      display: ""
+    }
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1274011b",
+            type: "Deal",
+            merchant: {
+              merchantName: "Amazon.pl"
+            },
+            temperature: 28
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement: createMockElement
+    },
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: ["Media Expert"] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return {
+                settings: {
+                  useFirefoxSync: true,
+                  alwaysFilterOnPageOpen: true,
+                  filtersEnabled: true,
+                  hideUnfilteredBelowThreshold: true,
+                  showBelowThresholdAsDimmed: true,
+                  hideUnfilteredThreshold: 50
+                }
+              };
+            }
+
+            return { hiddenStores: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: () => {}
+        }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(card.style.display, "");
+  assert.equal(card.dataset.pepperStoreFilterHidden, undefined);
+  assert.equal(card.dataset.pepperStoreFilterDimmed, "true");
+  assert.equal(classNames.has("pepper-store-filter-dimmed"), true);
+  assert.ok(notice);
+  assert.equal(
+    notice.children[0].textContent,
+    "Deal Store Filter: Filtered by threshold < 50°"
+  );
+  assert.equal(notice.children.length, 1);
+});
+
+test("refreshStateFromStorage hides filtered stores below the configured threshold", async () => {
+  const card = {
+    appendChild: () => {},
+    classList: {
+      add: () => {},
+      remove: () => {}
+    },
+    dataset: {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    style: {
+      display: ""
+    }
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1274012",
+            type: "Deal",
+            merchant: {
+              merchantName: "Media Expert"
+            },
+            temperature: 35
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement: createMockElement
+    },
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: ["Media Expert"] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return {
+                settings: {
+                  useFirefoxSync: true,
+                  alwaysFilterOnPageOpen: true,
+                  filtersEnabled: true,
+                  showFilteredAboveThreshold: true,
+                  showFilteredThreshold: 200,
+                  hideUnfilteredBelowThreshold: true,
+                  hideUnfilteredThreshold: 50
+                }
+              };
+            }
+
+            return { hiddenStores: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: () => {}
+        }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(card.style.display, "none");
+  assert.equal(card.dataset.pepperStoreFilterHidden, "true");
+  assert.equal(card.dataset.pepperStoreFilterDimmed, undefined);
 });
 
 // Verifies the default-on page-opening option restores filtering when a new
