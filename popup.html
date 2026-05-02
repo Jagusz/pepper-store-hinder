@@ -48,18 +48,6 @@
         </header>
 
         <div class="settings-panel">
-          <label class="settings-field" for="temperature-threshold">
-            <span>Temperature threshold</span>
-            <input
-              id="temperature-threshold"
-              type="number"
-              min="0"
-              step="1"
-              inputmode="numeric"
-              placeholder="200"
-            >
-            <small>Used by the threshold-based filtering options below.</small>
-          </label>
           <label class="checkbox-row" for="use-firefox-sync">
             <input id="use-firefox-sync" type="checkbox">
             <span>Firefox Sync <small>(requires Firefox account)</small></span>
@@ -72,14 +60,40 @@
             <input id="show-filtered-as-dimmed" type="checkbox">
             <span>Show filtered deals as compact previews</span>
           </label>
-          <label class="checkbox-row" for="show-filtered-above-threshold">
-            <input id="show-filtered-above-threshold" type="checkbox">
-            <span>Show filtered deals above the threshold</span>
-          </label>
-          <label class="checkbox-row" for="hide-unfiltered-below-threshold">
-            <input id="hide-unfiltered-below-threshold" type="checkbox">
-            <span>Hide other deals below the threshold</span>
-          </label>
+          <div class="settings-option">
+            <label class="checkbox-row" for="show-filtered-above-threshold">
+              <input id="show-filtered-above-threshold" type="checkbox">
+              <span>Show filtered deals above this threshold</span>
+            </label>
+            <label class="settings-field" for="show-filtered-threshold">
+              <span>Show filtered deals threshold</span>
+              <input
+                id="show-filtered-threshold"
+                type="number"
+                min="0"
+                step="1"
+                inputmode="numeric"
+                placeholder="200"
+              >
+            </label>
+          </div>
+          <div class="settings-option">
+            <label class="checkbox-row" for="hide-unfiltered-below-threshold">
+              <input id="hide-unfiltered-below-threshold" type="checkbox">
+              <span>Hide other deals below this threshold</span>
+            </label>
+            <label class="settings-field" for="hide-unfiltered-threshold">
+              <span>Hide other deals threshold</span>
+              <input
+                id="hide-unfiltered-threshold"
+                type="number"
+                min="0"
+                step="1"
+                inputmode="numeric"
+                placeholder="50"
+              >
+            </label>
+          </div>
         </div>
         <button id="clear-stores" class="secondary danger" type="button">Clear list</button>
       </section>

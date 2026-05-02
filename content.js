@@ -17,7 +17,8 @@ const DEFAULT_SETTINGS = {
   showFilteredAsDimmed: false,
   showFilteredAboveThreshold: false,
   hideUnfilteredBelowThreshold: false,
-  temperatureThreshold: null
+  showFilteredThreshold: null,
+  hideUnfilteredThreshold: null
 };
 
 let hiddenStores = [];
@@ -25,7 +26,8 @@ let filtersEnabled = true;
 let showFilteredAsDimmed = false;
 let showFilteredAboveThreshold = false;
 let hideUnfilteredBelowThreshold = false;
-let temperatureThreshold = null;
+let showFilteredThreshold = null;
+let hideUnfilteredThreshold = null;
 let lastDebugSignature = "";
 let applyFiltersTimer = null;
 
@@ -123,6 +125,8 @@ async function updateLocalCache(stores) {
 }
 
 function normalizeSettings(value) {
+  const legacyThreshold = normalizeThresholdValue(value?.temperatureThreshold);
+
   return {
     useFirefoxSync: value?.useFirefoxSync !== false,
     alwaysFilterOnPageOpen: value?.alwaysFilterOnPageOpen !== false,
@@ -130,7 +134,10 @@ function normalizeSettings(value) {
     showFilteredAsDimmed: value?.showFilteredAsDimmed === true,
     showFilteredAboveThreshold: value?.showFilteredAboveThreshold === true,
     hideUnfilteredBelowThreshold: value?.hideUnfilteredBelowThreshold === true,
-    temperatureThreshold: normalizeThresholdValue(value?.temperatureThreshold)
+    showFilteredThreshold:
+      normalizeThresholdValue(value?.showFilteredThreshold) ?? legacyThreshold,
+    hideUnfilteredThreshold:
+      normalizeThresholdValue(value?.hideUnfilteredThreshold) ?? legacyThreshold
   };
 }
 
@@ -550,11 +557,19 @@ function addFilterButton(item) {
 }
 
 function isTemperatureAtOrAboveThreshold(value) {
-  return temperatureThreshold !== null && value !== null && value >= temperatureThreshold;
+  return (
+    showFilteredThreshold !== null &&
+    value !== null &&
+    value >= showFilteredThreshold
+  );
 }
 
 function isTemperatureBelowThreshold(value) {
-  return temperatureThreshold !== null && value !== null && value < temperatureThreshold;
+  return (
+    hideUnfilteredThreshold !== null &&
+    value !== null &&
+    value < hideUnfilteredThreshold
+  );
 }
 
 function applyFilters() {
@@ -618,7 +633,8 @@ function applyFilters() {
     showFilteredAsDimmed,
     showFilteredAboveThreshold,
     hideUnfilteredBelowThreshold,
-    temperatureThreshold,
+    showFilteredThreshold,
+    hideUnfilteredThreshold,
     stores: hiddenStores,
     merchants: merchantNames.slice(0, 10)
   });
@@ -634,7 +650,8 @@ function applyFilters() {
       showFilteredAsDimmed,
       showFilteredAboveThreshold,
       hideUnfilteredBelowThreshold,
-      temperatureThreshold,
+      showFilteredThreshold,
+      hideUnfilteredThreshold,
       hiddenStores,
       sampleMerchants: merchantNames.slice(0, 10)
     });
@@ -820,7 +837,8 @@ async function refreshStateFromStorage(resetFiltersForPage = false) {
   showFilteredAsDimmed = settings.showFilteredAsDimmed;
   showFilteredAboveThreshold = settings.showFilteredAboveThreshold;
   hideUnfilteredBelowThreshold = settings.hideUnfilteredBelowThreshold;
-  temperatureThreshold = settings.temperatureThreshold;
+  showFilteredThreshold = settings.showFilteredThreshold;
+  hideUnfilteredThreshold = settings.hideUnfilteredThreshold;
   hiddenStores = await getStoredHiddenStores(settings);
   applyFilters();
 }
@@ -873,7 +891,8 @@ browser.storage.onChanged.addListener((changes, areaName) => {
       showFilteredAsDimmed,
       showFilteredAboveThreshold,
       hideUnfilteredBelowThreshold,
-      temperatureThreshold,
+      showFilteredThreshold,
+      hideUnfilteredThreshold,
       hiddenStores
     });
   });

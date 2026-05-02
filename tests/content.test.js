@@ -115,6 +115,32 @@ test("normalizeThresholdValue parses valid numbers and rejects invalid values", 
   assert.equal(context.normalizeThresholdValue("abc"), null);
 });
 
+// Verifies the new split threshold fields still accept the legacy shared
+// threshold value, so early testers keep the same behavior after the rename.
+test("normalizeSettings falls back to the legacy shared threshold", () => {
+  const context = loadContentScript();
+
+  assert.equal(
+    JSON.stringify(
+      context.normalizeSettings({
+        showFilteredAboveThreshold: true,
+        hideUnfilteredBelowThreshold: true,
+        temperatureThreshold: 150
+      })
+    ),
+    JSON.stringify({
+      useFirefoxSync: true,
+      alwaysFilterOnPageOpen: true,
+      filtersEnabled: true,
+      showFilteredAsDimmed: false,
+      showFilteredAboveThreshold: true,
+      hideUnfilteredBelowThreshold: true,
+      showFilteredThreshold: 150,
+      hideUnfilteredThreshold: 150
+    })
+  );
+});
+
 // Verifies the extension can combine lists without showing duplicate stores.
 test("mergeStoreLists removes duplicates case-insensitively", () => {
   const context = loadContentScript();
@@ -1025,8 +1051,8 @@ test("compact filtered previews include a remove filter action", async () => {
 });
 
 // Verifies filtered stores can stay visible when their temperature reaches the
-// configured threshold.
-test("refreshStateFromStorage shows filtered stores above the threshold", async () => {
+// configured threshold assigned to the filtered-store rule.
+test("refreshStateFromStorage shows filtered stores above the configured threshold", async () => {
   const card = {
     appendChild: () => {},
     classList: {
@@ -1088,7 +1114,7 @@ test("refreshStateFromStorage shows filtered stores above the threshold", async 
                   alwaysFilterOnPageOpen: true,
                   filtersEnabled: true,
                   showFilteredAboveThreshold: true,
-                  temperatureThreshold: 200
+                  showFilteredThreshold: 200
                 }
               };
             }
@@ -1112,8 +1138,8 @@ test("refreshStateFromStorage shows filtered stores above the threshold", async 
 });
 
 // Verifies non-filtered stores can be hidden when their temperature drops below
-// the configured threshold.
-test("refreshStateFromStorage hides non-filtered stores below the threshold", async () => {
+// the configured threshold assigned to the non-filtered-store rule.
+test("refreshStateFromStorage hides non-filtered stores below the configured threshold", async () => {
   const card = {
     appendChild: () => {},
     classList: {
@@ -1175,7 +1201,7 @@ test("refreshStateFromStorage hides non-filtered stores below the threshold", as
                   alwaysFilterOnPageOpen: true,
                   filtersEnabled: true,
                   hideUnfilteredBelowThreshold: true,
-                  temperatureThreshold: 50
+                  hideUnfilteredThreshold: 50
                 }
               };
             }

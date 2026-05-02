@@ -7,7 +7,8 @@ const DEFAULT_SETTINGS = {
   showFilteredAsDimmed: false,
   showFilteredAboveThreshold: false,
   hideUnfilteredBelowThreshold: false,
-  temperatureThreshold: null
+  showFilteredThreshold: null,
+  hideUnfilteredThreshold: null
 };
 
 const form = document.querySelector("#store-form");
@@ -23,12 +24,17 @@ const settingsView = document.querySelector("#settings-view");
 const syncCheckbox = document.querySelector("#use-firefox-sync");
 const alwaysFilterCheckbox = document.querySelector("#always-filter-on-open");
 const dimmedCheckbox = document.querySelector("#show-filtered-as-dimmed");
-const thresholdInput = document.querySelector("#temperature-threshold");
 const showFilteredAboveThresholdCheckbox = document.querySelector(
   "#show-filtered-above-threshold"
 );
+const showFilteredThresholdInput = document.querySelector(
+  "#show-filtered-threshold"
+);
 const hideUnfilteredBelowThresholdCheckbox = document.querySelector(
   "#hide-unfiltered-below-threshold"
+);
+const hideUnfilteredThresholdInput = document.querySelector(
+  "#hide-unfiltered-threshold"
 );
 
 function normalizeText(value) {
@@ -65,6 +71,8 @@ function normalizeThresholdValue(value) {
 }
 
 function normalizeSettings(value) {
+  const legacyThreshold = normalizeThresholdValue(value?.temperatureThreshold);
+
   return {
     useFirefoxSync: value?.useFirefoxSync !== false,
     alwaysFilterOnPageOpen: value?.alwaysFilterOnPageOpen !== false,
@@ -72,7 +80,10 @@ function normalizeSettings(value) {
     showFilteredAsDimmed: value?.showFilteredAsDimmed === true,
     showFilteredAboveThreshold: value?.showFilteredAboveThreshold === true,
     hideUnfilteredBelowThreshold: value?.hideUnfilteredBelowThreshold === true,
-    temperatureThreshold: normalizeThresholdValue(value?.temperatureThreshold)
+    showFilteredThreshold:
+      normalizeThresholdValue(value?.showFilteredThreshold) ?? legacyThreshold,
+    hideUnfilteredThreshold:
+      normalizeThresholdValue(value?.hideUnfilteredThreshold) ?? legacyThreshold
   };
 }
 
@@ -95,9 +106,10 @@ function updateSettingsUi(settings) {
   syncCheckbox.checked = settings.useFirefoxSync;
   alwaysFilterCheckbox.checked = settings.alwaysFilterOnPageOpen;
   dimmedCheckbox.checked = settings.showFilteredAsDimmed;
-  thresholdInput.value = settings.temperatureThreshold ?? "";
   showFilteredAboveThresholdCheckbox.checked = settings.showFilteredAboveThreshold;
+  showFilteredThresholdInput.value = settings.showFilteredThreshold ?? "";
   hideUnfilteredBelowThresholdCheckbox.checked = settings.hideUnfilteredBelowThreshold;
+  hideUnfilteredThresholdInput.value = settings.hideUnfilteredThreshold ?? "";
   filterToggleButton.textContent = settings.filtersEnabled
     ? "Disable filters"
     : "Enable filters";
@@ -349,11 +361,11 @@ dimmedCheckbox.addEventListener("change", async () => {
   await refreshActiveTabFilters();
 });
 
-thresholdInput.addEventListener("change", async () => {
+showFilteredThresholdInput.addEventListener("change", async () => {
   const currentSettings = await getSettings();
   const settings = await saveSettings({
     ...currentSettings,
-    temperatureThreshold: thresholdInput.value
+    showFilteredThreshold: showFilteredThresholdInput.value
   });
 
   updateSettingsUi(settings);
@@ -378,6 +390,18 @@ hideUnfilteredBelowThresholdCheckbox.addEventListener("change", async () => {
   const settings = await saveSettings({
     ...currentSettings,
     hideUnfilteredBelowThreshold: hideUnfilteredBelowThresholdCheckbox.checked
+  });
+
+  updateSettingsUi(settings);
+  renderStores(await getHiddenStores(settings));
+  await refreshActiveTabFilters();
+});
+
+hideUnfilteredThresholdInput.addEventListener("change", async () => {
+  const currentSettings = await getSettings();
+  const settings = await saveSettings({
+    ...currentSettings,
+    hideUnfilteredThreshold: hideUnfilteredThresholdInput.value
   });
 
   updateSettingsUi(settings);

@@ -11,9 +11,8 @@ Release focused on making filtering easier to control without losing the saved s
 - `Firefox Sync` setting for switching between synced storage and local-only storage.
 - `Always filter when opening a page` setting.
 - `Show filtered deals as compact previews` setting for keeping matched deals visible as compact previews.
-- `Temperature threshold` setting shared by the threshold-based filtering rules.
-- `Show filtered deals above the threshold` option.
-- `Hide other deals below the threshold` option.
+- `Show filtered deals above this threshold` option with its own threshold field.
+- `Hide other deals below this threshold` option with its own threshold field.
 - Inline `Filtered by Deal Store Filter` notice on compact previews.
 - Inline `Remove filter` action on compact previews.
 - Immediate active-tab refresh after changing filters or settings when the content script is available.

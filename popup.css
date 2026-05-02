@@ -109,6 +109,11 @@ header span {
   background: var(--pepper-surface);
 }
 
+.settings-option {
+  display: grid;
+  gap: 8px;
+}
+
 .settings-field {
   display: grid;
   gap: 6px;
