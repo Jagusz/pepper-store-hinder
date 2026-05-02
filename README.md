@@ -122,10 +122,10 @@ Na Windows można użyć skryptu:
 .\scripts\package-amo.ps1
 ```
 
-Skrypt tworzy plik:
+Skrypt tworzy plik na podstawie wersji z `manifest.json`:
 
 ```text
-dist/deal-store-filter-0.2.0.zip
+dist/deal-store-filter-<manifest-version>.zip
 ```
 
 ZIP zawiera tylko pliki potrzebne do działania dodatku:

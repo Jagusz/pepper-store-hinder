@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $dist = Join-Path $root "dist"
-$zip = Join-Path $dist "deal-store-filter-0.2.0.zip"
+$manifestPath = Join-Path $root "manifest.json"
 
 $files = @(
   "manifest.json",
@@ -11,6 +11,18 @@ $files = @(
   "popup.js",
   "popup.css"
 )
+
+if (-not (Test-Path $manifestPath)) {
+  throw "Missing manifest file: $manifestPath"
+}
+
+$manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+$version = [string]$manifest.version
+if ([string]::IsNullOrWhiteSpace($version)) {
+  throw "Manifest version is missing or empty."
+}
+
+$zip = Join-Path $dist "deal-store-filter-$version.zip"
 
 New-Item -ItemType Directory -Path $dist -Force | Out-Null
 if (Test-Path $zip) {

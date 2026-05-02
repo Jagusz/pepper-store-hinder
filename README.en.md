@@ -122,10 +122,10 @@ On Windows, you can use this script:
 .\scripts\package-amo.ps1
 ```
 
-The script creates:
+The script creates a file based on the version from `manifest.json`:
 
 ```text
-dist/deal-store-filter-0.2.0.zip
+dist/deal-store-filter-<manifest-version>.zip
 ```
 
 The ZIP contains only the files required to run the add-on:

@@ -19,7 +19,7 @@ Release focused on making filtering easier to control without losing the saved s
 ### Changed
 
 - The package version is now `0.2.0`.
-- The AMO package script now creates `dist/deal-store-filter-0.2.0.zip`.
+- The AMO package script now reads the ZIP version from `manifest.json`.
 
 ### Notes For AMO
 
