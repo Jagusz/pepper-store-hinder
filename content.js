@@ -14,12 +14,18 @@ const DEFAULT_SETTINGS = {
   useFirefoxSync: true,
   alwaysFilterOnPageOpen: true,
   filtersEnabled: true,
-  showFilteredAsDimmed: false
+  showFilteredAsDimmed: false,
+  showFilteredAboveThreshold: false,
+  hideUnfilteredBelowThreshold: false,
+  temperatureThreshold: null
 };
 
 let hiddenStores = [];
 let filtersEnabled = true;
 let showFilteredAsDimmed = false;
+let showFilteredAboveThreshold = false;
+let hideUnfilteredBelowThreshold = false;
+let temperatureThreshold = null;
 let lastDebugSignature = "";
 let applyFiltersTimer = null;
 
@@ -58,6 +64,21 @@ function normalizeStoreName(value) {
   return String(value || "")
     .trim()
     .replace(/\s+/g, " ");
+}
+
+function normalizeThresholdValue(value) {
+  if (value === "" || value === null || value === undefined) {
+    return null;
+  }
+
+  const normalizedValue =
+    typeof value === "number" ? value : Number(String(value).replace(",", "."));
+
+  if (!Number.isFinite(normalizedValue) || normalizedValue < 0) {
+    return null;
+  }
+
+  return normalizedValue;
 }
 
 function normalizeLinkHostName(value) {
@@ -106,7 +127,10 @@ function normalizeSettings(value) {
     useFirefoxSync: value?.useFirefoxSync !== false,
     alwaysFilterOnPageOpen: value?.alwaysFilterOnPageOpen !== false,
     filtersEnabled: value?.filtersEnabled !== false,
-    showFilteredAsDimmed: value?.showFilteredAsDimmed === true
+    showFilteredAsDimmed: value?.showFilteredAsDimmed === true,
+    showFilteredAboveThreshold: value?.showFilteredAboveThreshold === true,
+    hideUnfilteredBelowThreshold: value?.hideUnfilteredBelowThreshold === true,
+    temperatureThreshold: normalizeThresholdValue(value?.temperatureThreshold)
   };
 }
 
@@ -287,6 +311,7 @@ function createItemFromThread(card, normalizer, thread) {
     normalizeStoreName(thread?.merchant?.merchantName) ||
     normalizeLinkHostName(thread?.linkHost) ||
     getMerchantNameFromCardText(card);
+  const temperature = normalizeThresholdValue(thread?.temperature);
 
   if (!merchantName || thread?.type === "Discussion") {
     return null;
@@ -297,7 +322,8 @@ function createItemFromThread(card, normalizer, thread) {
     card,
     merchant: {
       name: merchantName
-    }
+    },
+    temperature
   };
 }
 
@@ -523,6 +549,14 @@ function addFilterButton(item) {
   }
 }
 
+function isTemperatureAtOrAboveThreshold(value) {
+  return temperatureThreshold !== null && value !== null && value >= temperatureThreshold;
+}
+
+function isTemperatureBelowThreshold(value) {
+  return temperatureThreshold !== null && value !== null && value < temperatureThreshold;
+}
+
 function applyFilters() {
   const items = getNormalizerItems();
   let hiddenCount = 0;
@@ -541,7 +575,22 @@ function applyFilters() {
       continue;
     }
 
-    if (isStoreHidden(item.merchant.name)) {
+    const isFilteredStore = isStoreHidden(item.merchant.name);
+    const shouldShowFilteredStore =
+      isFilteredStore &&
+      showFilteredAboveThreshold &&
+      isTemperatureAtOrAboveThreshold(item.temperature);
+    const shouldHideUnfilteredStore =
+      !isFilteredStore &&
+      hideUnfilteredBelowThreshold &&
+      isTemperatureBelowThreshold(item.temperature);
+
+    if (shouldShowFilteredStore) {
+      showCard(item.card);
+      continue;
+    }
+
+    if (isFilteredStore) {
       if (showFilteredAsDimmed) {
         dimCard(item.card, item.merchant);
       } else {
@@ -549,9 +598,16 @@ function applyFilters() {
       }
 
       hiddenCount += 1;
-    } else {
-      showCard(item.card);
+      continue;
     }
+
+    if (shouldHideUnfilteredStore) {
+      hideCard(item.card);
+      hiddenCount += 1;
+      continue;
+    }
+
+    showCard(item.card);
   }
 
   const merchantNames = Array.from(new Set(items.map((item) => item.merchant.name)));
@@ -560,6 +616,9 @@ function applyFilters() {
     hidden: hiddenCount,
     filtersEnabled,
     showFilteredAsDimmed,
+    showFilteredAboveThreshold,
+    hideUnfilteredBelowThreshold,
+    temperatureThreshold,
     stores: hiddenStores,
     merchants: merchantNames.slice(0, 10)
   });
@@ -573,6 +632,9 @@ function applyFilters() {
       hiddenOffers: hiddenCount,
       filtersEnabled,
       showFilteredAsDimmed,
+      showFilteredAboveThreshold,
+      hideUnfilteredBelowThreshold,
+      temperatureThreshold,
       hiddenStores,
       sampleMerchants: merchantNames.slice(0, 10)
     });
@@ -756,6 +818,9 @@ async function refreshStateFromStorage(resetFiltersForPage = false) {
 
   filtersEnabled = settings.filtersEnabled;
   showFilteredAsDimmed = settings.showFilteredAsDimmed;
+  showFilteredAboveThreshold = settings.showFilteredAboveThreshold;
+  hideUnfilteredBelowThreshold = settings.hideUnfilteredBelowThreshold;
+  temperatureThreshold = settings.temperatureThreshold;
   hiddenStores = await getStoredHiddenStores(settings);
   applyFilters();
 }
@@ -806,6 +871,9 @@ browser.storage.onChanged.addListener((changes, areaName) => {
     debugLog("Filter state changed", {
       filtersEnabled,
       showFilteredAsDimmed,
+      showFilteredAboveThreshold,
+      hideUnfilteredBelowThreshold,
+      temperatureThreshold,
       hiddenStores
     });
   });

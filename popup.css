@@ -109,6 +109,19 @@ header span {
   background: var(--pepper-surface);
 }
 
+.settings-field {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  font-weight: 700;
+}
+
+.settings-field small {
+  color: var(--pepper-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .checkbox-row {
   display: flex;
   align-items: center;

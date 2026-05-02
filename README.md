@@ -95,6 +95,9 @@ Popup ma widok ustawień otwierany ikoną koła zębatego.
 - `Firefox Sync` - zapisuje listę filtrów w `browser.storage.sync` i utrzymuje lokalną kopię awaryjną. Po wyłączeniu lista jest zapisywana tylko lokalnie na bieżącym urządzeniu.
 - `Always filter when opening a page` - po otwarciu obsługiwanej strony automatycznie włącza filtrowanie, nawet jeśli wcześniej zostało tymczasowo wyłączone.
 - `Show filtered deals as compact previews` - zamiast ukrywać pasujące oferty, zostawia je na liście jako kompaktowy podgląd.
+- `Temperature threshold` - ustawia próg temperatury oferty używany przez opcje progowe.
+- `Show filtered deals above the threshold` - pokazuje oferty z filtrowanych sklepów, jeśli ich temperatura jest równa progowi albo go przekracza.
+- `Hide other deals below the threshold` - ukrywa oferty ze sklepów spoza listy filtrów, jeśli ich temperatura spada poniżej progu.
 
 Przełącznik `Disable filters` / `Enable filters` w głównym widoku popupu tymczasowo pokazuje albo ukrywa pasujące oferty bez usuwania zapisanej listy sklepów.
 
