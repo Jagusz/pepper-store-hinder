@@ -2,6 +2,18 @@
 
 [English version](README.en.md)
 
+[Lista zmian](CHANGELOG.pl.md)
+
+## Co nowego w 0.2.0
+
+- Dodano widok ustawień w popupie.
+- Dodano przełącznik `Disable filters` / `Enable filters`, który tymczasowo włącza lub wyłącza filtrowanie bez usuwania zapisanej listy sklepów.
+- Dodano ustawienie `Firefox Sync`, które pozwala wybrać zapis przez Firefox Sync albo zapis tylko lokalny na bieżącym urządzeniu.
+- Dodano ustawienie `Always filter when opening a page`, które automatycznie przywraca filtrowanie po otwarciu obsługiwanej strony.
+- Dodano ustawienie `Show filtered deals as compact previews`, które pokazuje przefiltrowane oferty jako kompaktowy podgląd zamiast całkowicie je ukrywać.
+- Kompaktowy podgląd pokazuje komunikat `Filtered by Deal Store Filter` oraz przycisk `Remove filter` usuwający dany sklep z listy filtrów.
+- Zmiany listy filtrów i ustawień próbują odświeżyć aktywną kartę od razu, jeśli działa na niej content script rozszerzenia.
+
 Nieoficjalne rozszerzenie do Firefoksa, które pozwala ukrywać oferty z wybranych sklepów na obsługiwanych stronach z promocjami.
 
 Obecna wersja działa na Pepper.pl. Rozszerzenie nie jest tworzone, wspierane ani zatwierdzone przez Pepper.pl.
@@ -56,7 +68,7 @@ Nazwy sklepów najlepiej dodawać dokładnie tak, jak występują na obsługiwan
 
 Lista ukrytych sklepów jest przechowywana przy użyciu `browser.storage.sync`, aby umożliwić synchronizację filtrów między urządzeniami użytkownika przez Firefox Sync. Rozszerzenie nie wysyła tych danych do autora dodatku, nie korzysta z własnego serwera, nie zawiera analityki i nie ładuje zdalnego kodu.
 
-Rozszerzenie używa `browser.storage.local` jako fallback/cache. Na gałęzi Android lista odczytana z Firefox Sync jest łączona z lokalną kopią, aby nie zgubić filtrów zapisanych lokalnie, gdy synchronizacja jest czasowo niedostępna albo zachowuje się inaczej na Firefox for Android.
+Rozszerzenie używa `browser.storage.local` jako fallback/cache. Na gałęzi `android` lista odczytana z Firefox Sync jest łączona z lokalną kopią, żeby nie zgubić filtrów zapisanych lokalnie, gdy synchronizacja jest chwilowo niedostępna albo zachowuje się inaczej na Firefox for Android.
 
 Rozszerzenie nie używa:
 
@@ -72,7 +84,24 @@ Rozszerzenie nie używa:
 
 Głównym miejscem zapisu listy filtrów jest `browser.storage.sync`. Jeśli użytkownik ma włączony Firefox Sync i synchronizację dodatków, lista może być dostępna na innych urządzeniach zalogowanych do tego samego konta Firefox/Mozilla.
 
-Kopia w `browser.storage.local` jest utrzymywana po to, aby zwiększyć odporność dodatku na błędy lub niedostępność Sync. Na gałęzi Android odczyt zwraca połączoną, zduplikowaną tylko raz listę z obu miejsc zapisu.
+Kopia w `browser.storage.local` jest utrzymywana po to, aby zwiększyć odporność dodatku na błędy lub niedostępność Sync. Na gałęzi `android` odczyt zwraca zduplikowaną tylko raz listę połączoną z obu miejsc zapisu.
+
+Jeśli w ustawieniach wyłączysz `Firefox Sync`, rozszerzenie nie czyta ani nie zapisuje listy w `browser.storage.sync`. W takim trybie lista filtrów zostaje tylko w lokalnym profilu Firefoksa.
+
+## Ustawienia
+
+Popup ma widok ustawień otwierany ikoną koła zębatego.
+
+- `Firefox Sync` - zapisuje listę filtrów w `browser.storage.sync` i utrzymuje lokalną kopię awaryjną. Po wyłączeniu lista jest zapisywana tylko lokalnie na bieżącym urządzeniu.
+- `Always filter when opening a page` - po otwarciu obsługiwanej strony automatycznie włącza filtrowanie, nawet jeśli wcześniej zostało tymczasowo wyłączone.
+- `Show filtered deals as compact previews` - zamiast ukrywać pasujące oferty, zostawia je na liście jako kompaktowy podgląd.
+- `Show filtered deals above this threshold` - pokazuje oferty z filtrowanych sklepów, jeśli ich temperatura jest równa ustawionemu progowi albo go przekracza.
+- `Show filtered deals threshold` - ustawia próg temperatury dla pokazywania ofert z filtrowanych sklepów.
+- `Hide deals below this threshold` - ukrywa oferty, jeśli ich temperatura spada poniżej ustawionego progu.
+- `Show deals below threshold as compact previews` - zamiast całkowicie ukrywać oferty poniżej progu, zostawia je na liście jako wyszarzony podgląd.
+- `Hide deals threshold` - ustawia próg temperatury dla ukrywania ofert o zbyt niskiej temperaturze.
+
+Przełącznik `Disable filters` / `Enable filters` w głównym widoku popupu tymczasowo pokazuje albo ukrywa pasujące oferty bez usuwania zapisanej listy sklepów.
 
 ## Instalacja lokalna do testów
 
@@ -90,7 +119,7 @@ Po zmianach w plikach kliknij `Reload` przy dodatku w `about:debugging`, a potem
 
 ## Firefox for Android
 
-Branch `android` zawiera deklarację zgodności z Firefox for Android:
+Gałąź `android` zawiera deklarację zgodności z Firefox for Android:
 
 ```json
 "browser_specific_settings": {
@@ -110,10 +139,10 @@ Na Windows można użyć skryptu:
 .\scripts\package-amo.ps1
 ```
 
-Skrypt tworzy plik:
+Skrypt tworzy plik na podstawie wersji z `manifest.json`:
 
 ```text
-dist/deal-store-filter-android-0.2.0.zip
+dist/deal-store-filter-android-<manifest-version>.zip
 ```
 
 ZIP zawiera tylko pliki potrzebne do działania dodatku:
@@ -125,7 +154,7 @@ ZIP zawiera tylko pliki potrzebne do działania dodatku:
 - `popup.css`
 - `LICENSE`
 
-Do paczki nie trafiają katalogi `.git`, `.github`, `tests`, `node_modules` ani pliki CI.
+Do paczki nie trafiają katalogi `.git`, `.github`, `tests`, `node_modules`, `dist` ani pliki takie jak `README.md`, `package.json` i `package-lock.json`.
 
 ## Nieoficjalny charakter dodatku
 
@@ -176,13 +205,16 @@ Uruchomienie testów:
 
 ```bash
 node tests/content.test.js
+node tests/manifest.test.js
 node tests/manifest-android.test.js
 ```
 
 Testy sprawdzają między innymi:
 
 - normalizację nazw sklepów,
-- łączenie list zapisanych w Firefox Sync i local storage,
+- zapis i odczyt przez Firefox Sync,
+- łączenie list z Firefox Sync i local storage na gałęzi Android,
+- fallback do local storage,
 - parsowanie danych `data-vue3`,
 - wyszukiwanie `props.thread`,
 - fallback do `linkHost`, gdy `merchant` jest pusty,
@@ -191,6 +223,7 @@ Testy sprawdzają między innymi:
 - czyszczenie doklejonych etykiet, kodów kuponów i CTA z nazwy sklepu,
 - ignorowanie ofert bez możliwej do ustalenia nazwy sklepu,
 - ignorowanie wpisów typu `Discussion`,
+- deklaracje manifestu wymagane do publikacji,
 - deklaracje manifestu wymagane do publikacji na Firefox for Android.
 
 Te same testy są uruchamiane w GitHub Actions.

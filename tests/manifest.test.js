@@ -66,3 +66,10 @@ test("manifest keeps a stable Gecko extension id", () => {
     "deal-store-filter@example.local"
   );
 });
+
+// Verifies the release version in the manifest matches the current AMO package.
+test("manifest version is 0.2.0", () => {
+  const manifest = loadManifest();
+
+  assert.equal(manifest.version, "0.2.0");
+});

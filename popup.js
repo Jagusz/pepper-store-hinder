@@ -1,7 +1,15 @@
 const STORAGE_KEY = "hiddenStores";
 const SETTINGS_KEY = "settings";
 const DEFAULT_SETTINGS = {
-  useFirefoxSync: true
+  useFirefoxSync: true,
+  alwaysFilterOnPageOpen: true,
+  filtersEnabled: true,
+  showFilteredAsDimmed: false,
+  showBelowThresholdAsDimmed: false,
+  showFilteredAboveThreshold: false,
+  hideUnfilteredBelowThreshold: false,
+  showFilteredThreshold: null,
+  hideUnfilteredThreshold: null
 };
 
 const form = document.querySelector("#store-form");
@@ -9,11 +17,31 @@ const input = document.querySelector("#store-name");
 const list = document.querySelector("#store-list");
 const clearButton = document.querySelector("#clear-stores");
 const statusText = document.querySelector("#storage-status");
+const filterToggleButton = document.querySelector("#toggle-filters");
 const mainView = document.querySelector("#main-view");
 const settingsToggle = document.querySelector("#settings-toggle");
 const settingsBack = document.querySelector("#settings-back");
 const settingsView = document.querySelector("#settings-view");
 const syncCheckbox = document.querySelector("#use-firefox-sync");
+const alwaysFilterCheckbox = document.querySelector("#always-filter-on-open");
+const dimmedCheckbox = document.querySelector("#show-filtered-as-dimmed");
+const showBelowThresholdAsDimmedCheckbox = document.querySelector(
+  "#show-below-threshold-as-dimmed"
+);
+const showFilteredAboveThresholdCheckbox = document.querySelector(
+  "#show-filtered-above-threshold"
+);
+const showFilteredThresholdInput = document.querySelector(
+  "#show-filtered-threshold"
+);
+const hideUnfilteredBelowThresholdCheckbox = document.querySelector(
+  "#hide-unfiltered-below-threshold"
+);
+const hideUnfilteredThresholdInput = document.querySelector(
+  "#hide-unfiltered-threshold"
+);
+let latestSettings = { ...DEFAULT_SETTINGS };
+let settingsSaveQueue = Promise.resolve();
 
 function normalizeText(value) {
   return String(value || "")
@@ -33,9 +61,36 @@ function setStatus(message, isWarning = false) {
   statusText.classList.toggle("warning", isWarning);
 }
 
+function normalizeThresholdValue(value) {
+  if (value === "" || value === null || value === undefined) {
+    return null;
+  }
+
+  const normalizedValue =
+    typeof value === "number" ? value : Number(String(value).replace(",", "."));
+
+  if (!Number.isFinite(normalizedValue) || normalizedValue < 0) {
+    return null;
+  }
+
+  return normalizedValue;
+}
+
 function normalizeSettings(value) {
+  const legacyThreshold = normalizeThresholdValue(value?.temperatureThreshold);
+
   return {
-    useFirefoxSync: value?.useFirefoxSync !== false
+    useFirefoxSync: value?.useFirefoxSync !== false,
+    alwaysFilterOnPageOpen: value?.alwaysFilterOnPageOpen !== false,
+    filtersEnabled: value?.filtersEnabled !== false,
+    showFilteredAsDimmed: value?.showFilteredAsDimmed === true,
+    showBelowThresholdAsDimmed: value?.showBelowThresholdAsDimmed === true,
+    showFilteredAboveThreshold: value?.showFilteredAboveThreshold === true,
+    hideUnfilteredBelowThreshold: value?.hideUnfilteredBelowThreshold === true,
+    showFilteredThreshold:
+      normalizeThresholdValue(value?.showFilteredThreshold) ?? legacyThreshold,
+    hideUnfilteredThreshold:
+      normalizeThresholdValue(value?.hideUnfilteredThreshold) ?? legacyThreshold
   };
 }
 
@@ -55,10 +110,69 @@ async function saveSettings(settings) {
 }
 
 function updateSettingsUi(settings) {
+  latestSettings = settings;
   syncCheckbox.checked = settings.useFirefoxSync;
+  alwaysFilterCheckbox.checked = settings.alwaysFilterOnPageOpen;
+  dimmedCheckbox.checked = settings.showFilteredAsDimmed;
+  showBelowThresholdAsDimmedCheckbox.checked = settings.showBelowThresholdAsDimmed;
+  showFilteredAboveThresholdCheckbox.checked = settings.showFilteredAboveThreshold;
+  showFilteredThresholdInput.value = settings.showFilteredThreshold ?? "";
+  hideUnfilteredBelowThresholdCheckbox.checked = settings.hideUnfilteredBelowThreshold;
+  hideUnfilteredThresholdInput.value = settings.hideUnfilteredThreshold ?? "";
+  filterToggleButton.textContent = settings.filtersEnabled
+    ? "Disable filters"
+    : "Enable filters";
+  filterToggleButton.classList.toggle("is-off", !settings.filtersEnabled);
+  filterToggleButton.setAttribute(
+    "aria-pressed",
+    String(!settings.filtersEnabled)
+  );
+}
+
+function collectSettingsFromUi(baseSettings = latestSettings) {
+  return {
+    ...baseSettings,
+    useFirefoxSync: syncCheckbox.checked,
+    alwaysFilterOnPageOpen: alwaysFilterCheckbox.checked,
+    showFilteredAsDimmed: dimmedCheckbox.checked,
+    showBelowThresholdAsDimmed: showBelowThresholdAsDimmedCheckbox.checked,
+    showFilteredAboveThreshold: showFilteredAboveThresholdCheckbox.checked,
+    hideUnfilteredBelowThreshold: hideUnfilteredBelowThresholdCheckbox.checked,
+    showFilteredThreshold: showFilteredThresholdInput.value,
+    hideUnfilteredThreshold: hideUnfilteredThresholdInput.value
+  };
+}
+
+async function applySavedSettings(settings) {
+  updateSettingsUi(settings);
+  renderStores(await getHiddenStores(settings));
+  await refreshActiveTabFilters();
+  return settings;
+}
+
+function queueSettingsSave(buildNextSettings) {
+  settingsSaveQueue = settingsSaveQueue
+    .catch(() => undefined)
+    .then(async () => {
+      const currentSettings = latestSettings || await getSettings();
+      const nextSettings = normalizeSettings(
+        typeof buildNextSettings === "function"
+          ? buildNextSettings(currentSettings)
+          : buildNextSettings
+      );
+
+      return applySavedSettings(await saveSettings(nextSettings));
+    });
+
+  return settingsSaveQueue;
 }
 
 function updateStorageStatus(syncAvailable, settings) {
+  if (!settings.filtersEnabled) {
+    setStatus("Filters disabled. Matching deals are currently visible.");
+    return;
+  }
+
   if (!settings.useFirefoxSync) {
     setStatus("Firefox Sync disabled. List saved locally.");
     return;
@@ -70,6 +184,37 @@ function updateStorageStatus(syncAvailable, settings) {
       : "Firefox Sync unavailable. List saved locally as a fallback.",
     !syncAvailable
   );
+}
+
+async function refreshActiveTabFilters() {
+  if (!browser.tabs?.query || !browser.tabs?.sendMessage) {
+    return;
+  }
+
+  try {
+    const tabs = await browser.tabs.query({
+      active: true,
+      currentWindow: true
+    });
+    const activeTab = tabs[0];
+
+    if (activeTab?.id === undefined) {
+      return;
+    }
+
+    await browser.tabs.sendMessage(activeTab.id, {
+      type: "dealStoreFilterRefresh"
+    });
+  } catch {
+    // The active tab may be unsupported or may not have the content script.
+  }
+}
+
+async function saveThresholdSetting(settingKey, value) {
+  return queueSettingsSave((currentSettings) => ({
+    ...collectSettingsFromUi(currentSettings),
+    [settingKey]: value
+  }));
 }
 
 function showMainView() {
@@ -107,33 +252,39 @@ function mergeStoreLists(...storeLists) {
   return merged.sort((a, b) => a.localeCompare(b, "pl"));
 }
 
-async function getHiddenStores(settings) {
-  let syncedStores = [];
-  let localStores = [];
-  let syncAvailable = false;
+async function updateLocalCache(stores) {
+  const normalizedStores = mergeStoreLists(stores);
+  const localResult = await browser.storage.local.get({ [STORAGE_KEY]: [] });
+  const localStores = mergeStoreLists(localResult[STORAGE_KEY]);
 
+  if (JSON.stringify(localStores) !== JSON.stringify(normalizedStores)) {
+    await browser.storage.local.set({ [STORAGE_KEY]: normalizedStores });
+  }
+}
+
+async function getHiddenStores(settings) {
   if (settings.useFirefoxSync && browser.storage.sync) {
     try {
       const syncResult = await browser.storage.sync.get({ [STORAGE_KEY]: [] });
-      syncedStores = Array.isArray(syncResult[STORAGE_KEY])
-        ? syncResult[STORAGE_KEY]
-        : [];
-      syncAvailable = true;
+      const syncedStores = mergeStoreLists(syncResult[STORAGE_KEY]);
+      const localResult = await browser.storage.local.get({ [STORAGE_KEY]: [] });
+      const mergedStores = mergeStoreLists(
+        syncedStores,
+        localResult[STORAGE_KEY]
+      );
+
+      await updateLocalCache(mergedStores);
+      updateStorageStatus(true, settings);
+      return mergedStores;
     } catch (error) {
       console.warn("[Deal Store Filter] Firefox Sync unavailable", error);
     }
   }
 
   const localResult = await browser.storage.local.get({ [STORAGE_KEY]: [] });
-  localStores = Array.isArray(localResult[STORAGE_KEY])
-    ? localResult[STORAGE_KEY]
-    : [];
+  updateStorageStatus(false, settings);
 
-  updateStorageStatus(syncAvailable, settings);
-
-  return settings.useFirefoxSync
-    ? mergeStoreLists(syncedStores, localStores)
-    : mergeStoreLists(localStores);
+  return mergeStoreLists(localResult[STORAGE_KEY]);
 }
 
 async function saveHiddenStores(hiddenStores, settings) {
@@ -151,6 +302,7 @@ async function saveHiddenStores(hiddenStores, settings) {
 
   await browser.storage.local.set({ [STORAGE_KEY]: normalizedStores });
   updateStorageStatus(syncAvailable, settings);
+  await refreshActiveTabFilters();
 
   return normalizedStores;
 }
@@ -215,6 +367,14 @@ form.addEventListener("submit", async (event) => {
 });
 
 clearButton.addEventListener("click", async () => {
+  const shouldClearStores = window.confirm(
+    "Do you want to clear the hidden store list?"
+  );
+
+  if (!shouldClearStores) {
+    return;
+  }
+
   const settings = await getSettings();
 
   renderStores(await saveHiddenStores([], settings));
@@ -225,12 +385,62 @@ settingsToggle.addEventListener("click", showSettingsView);
 settingsBack.addEventListener("click", showMainView);
 
 syncCheckbox.addEventListener("change", async () => {
-  const settings = await saveSettings({
-    useFirefoxSync: syncCheckbox.checked
+  await queueSettingsSave((currentSettings) => {
+    return collectSettingsFromUi(currentSettings);
   });
+});
 
-  updateSettingsUi(settings);
-  renderStores(await getHiddenStores(settings));
+alwaysFilterCheckbox.addEventListener("change", async () => {
+  await queueSettingsSave((currentSettings) => {
+    return collectSettingsFromUi(currentSettings);
+  });
+});
+
+dimmedCheckbox.addEventListener("change", async () => {
+  await queueSettingsSave((currentSettings) => {
+    return collectSettingsFromUi(currentSettings);
+  });
+});
+
+showBelowThresholdAsDimmedCheckbox.addEventListener("change", async () => {
+  await queueSettingsSave((currentSettings) => {
+    return collectSettingsFromUi(currentSettings);
+  });
+});
+
+showFilteredThresholdInput.addEventListener("input", () => {
+  saveThresholdSetting("showFilteredThreshold", showFilteredThresholdInput.value);
+});
+
+showFilteredThresholdInput.addEventListener("change", () => {
+  saveThresholdSetting("showFilteredThreshold", showFilteredThresholdInput.value);
+});
+
+showFilteredAboveThresholdCheckbox.addEventListener("change", async () => {
+  await queueSettingsSave((currentSettings) => {
+    return collectSettingsFromUi(currentSettings);
+  });
+});
+
+hideUnfilteredBelowThresholdCheckbox.addEventListener("change", async () => {
+  await queueSettingsSave((currentSettings) => {
+    return collectSettingsFromUi(currentSettings);
+  });
+});
+
+hideUnfilteredThresholdInput.addEventListener("input", () => {
+  saveThresholdSetting("hideUnfilteredThreshold", hideUnfilteredThresholdInput.value);
+});
+
+hideUnfilteredThresholdInput.addEventListener("change", () => {
+  saveThresholdSetting("hideUnfilteredThreshold", hideUnfilteredThresholdInput.value);
+});
+
+filterToggleButton.addEventListener("click", async () => {
+  await queueSettingsSave((currentSettings) => ({
+    ...collectSettingsFromUi(currentSettings),
+    filtersEnabled: !currentSettings.filtersEnabled
+  }));
 });
 
 async function refreshPopup() {

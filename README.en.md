@@ -2,6 +2,18 @@
 
 [Polish version](README.md)
 
+[Changelog](CHANGELOG.md)
+
+## What's New In 0.2.0
+
+- Added a settings view in the popup.
+- Added a `Disable filters` / `Enable filters` toggle for temporarily turning filtering on or off without clearing the saved store list.
+- Added a `Firefox Sync` setting for choosing between Firefox Sync storage and local-only storage on the current device.
+- Added an `Always filter when opening a page` setting that restores filtering automatically when a supported page opens.
+- Added a `Show filtered deals as compact previews` setting that keeps filtered deals visible as compact previews instead of hiding them completely.
+- Compact previews show a `Filtered by Deal Store Filter` notice and a `Remove filter` button for removing that store from the filter list.
+- Store-list and settings changes try to refresh the active tab immediately when the extension content script is available on that tab.
+
 An unofficial Firefox extension that lets you hide deals from selected stores on supported shopping and deal websites.
 
 The current version works on Pepper.pl. This extension is not created, supported, or endorsed by Pepper.pl.
@@ -56,7 +68,7 @@ It is best to add store names exactly as they appear on the supported website, f
 
 The hidden store list is stored with `browser.storage.sync` so filters can be synchronized between the user's devices through Firefox Sync. The extension does not send this data to the add-on author, does not use its own server, does not include analytics, and does not load remote code.
 
-The extension uses `browser.storage.local` as a fallback/cache. On the Android branch, the list read from Firefox Sync is merged with the local copy so locally saved filters are not lost when Sync is temporarily unavailable or behaves differently on Firefox for Android.
+The extension uses `browser.storage.local` as a fallback/cache. On the `android` branch, the list read from Firefox Sync is merged with the local copy so locally saved filters are not lost when Sync is temporarily unavailable or behaves differently on Firefox for Android.
 
 The extension does not use:
 
@@ -72,7 +84,24 @@ The extension does not use:
 
 The main storage location for the filter list is `browser.storage.sync`. If the user has Firefox Sync and add-on synchronization enabled, the list may be available on other devices signed in to the same Firefox/Mozilla account.
 
-The `browser.storage.local` copy is kept to make the add-on more resilient to Sync errors or temporary unavailability. On the Android branch, reads return a deduplicated list merged from both storage locations.
+The `browser.storage.local` copy is kept to make the add-on more resilient to Sync errors or temporary unavailability. On the `android` branch, reads return a deduplicated list merged from both storage locations.
+
+If you turn off `Firefox Sync` in settings, the extension does not read or write the filter list in `browser.storage.sync`. In that mode, the filter list stays only in the local Firefox profile.
+
+## Settings
+
+The popup has a settings view opened with the gear button.
+
+- `Firefox Sync` - stores the filter list in `browser.storage.sync` and keeps a local fallback copy. When disabled, the list is stored only locally on the current device.
+- `Always filter when opening a page` - automatically turns filtering back on when a supported page opens, even if filtering was temporarily disabled earlier.
+- `Show filtered deals as compact previews` - keeps matching deals in the listing as compact previews instead of hiding them completely.
+- `Show filtered deals above this threshold` - shows deals from filtered stores when their temperature is equal to or higher than the configured threshold.
+- `Show filtered deals threshold` - sets the temperature threshold for showing deals from filtered stores.
+- `Hide deals below this threshold` - hides deals when their temperature drops below the configured threshold.
+- `Show deals below threshold as compact previews` - keeps below-threshold deals as dimmed compact previews instead of hiding them completely.
+- `Hide deals threshold` - sets the temperature threshold for hiding deals with too low a temperature.
+
+The `Disable filters` / `Enable filters` button in the main popup view temporarily shows or hides matching deals without clearing the saved store list.
 
 ## Local Installation for Testing
 
@@ -110,10 +139,10 @@ On Windows, you can use this script:
 .\scripts\package-amo.ps1
 ```
 
-The script creates:
+The script creates a file based on the version from `manifest.json`:
 
 ```text
-dist/deal-store-filter-android-0.2.0.zip
+dist/deal-store-filter-android-<manifest-version>.zip
 ```
 
 The ZIP contains only the files required to run the add-on:
@@ -125,7 +154,7 @@ The ZIP contains only the files required to run the add-on:
 - `popup.css`
 - `LICENSE`
 
-The package does not include `.git`, `.github`, `tests`, `node_modules`, or CI files.
+The package does not include `.git`, `.github`, `tests`, `node_modules`, `dist`, or files such as `README.md`, `package.json`, and `package-lock.json`.
 
 ## Unofficial Add-on
 
@@ -176,13 +205,16 @@ Run tests:
 
 ```bash
 node tests/content.test.js
+node tests/manifest.test.js
 node tests/manifest-android.test.js
 ```
 
 The tests cover, among other things:
 
 - store name normalization,
-- merging lists saved in Firefox Sync and local storage,
+- saving and reading through Firefox Sync,
+- merging Firefox Sync and local storage lists on the Android branch,
+- fallback to local storage,
 - parsing `data-vue3` data,
 - finding `props.thread`,
 - fallback to `linkHost` when `merchant` is empty,
@@ -191,6 +223,7 @@ The tests cover, among other things:
 - cleaning appended labels, voucher codes, and CTA text from store names,
 - ignoring offers where no store name can be detected,
 - ignoring `Discussion` entries,
+- manifest declarations required for publishing,
 - manifest declarations required for publishing on Firefox for Android.
 
 The same tests run in GitHub Actions.
