@@ -2,7 +2,7 @@
 
 [English version](README.en.md)
 
-[Lista zmian](CHANGELOG.md)
+[Lista zmian](CHANGELOG.pl.md)
 
 ## Co nowego w 0.2.0
 
