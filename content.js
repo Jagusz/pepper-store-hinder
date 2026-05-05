@@ -33,6 +33,7 @@ let showFilteredThreshold = null;
 let hideUnfilteredThreshold = null;
 let lastDebugSignature = "";
 let applyFiltersTimer = null;
+let confirmModalState = null;
 
 function isDebugEnabled() {
   try {
@@ -107,6 +108,123 @@ function normalizeLinkHostName(value) {
     .replace(/^\/\//, "")
     .replace(/\/.*$/, "")
     .replace(/^www\./i, "");
+}
+
+function ensureConfirmModal() {
+  if (confirmModalState?.container?.isConnected) {
+    return confirmModalState;
+  }
+
+  const container = document.createElement("div");
+  const backdrop = document.createElement("div");
+  const dialog = document.createElement("section");
+  const title = document.createElement("h2");
+  const message = document.createElement("p");
+  const actions = document.createElement("div");
+  const cancelButton = document.createElement("button");
+  const confirmButton = document.createElement("button");
+
+  container.className = "pepper-store-filter-confirm-modal";
+  container.hidden = true;
+
+  backdrop.className = "pepper-store-filter-confirm-backdrop";
+
+  dialog.className = "pepper-store-filter-confirm-dialog";
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+
+  title.className = "pepper-store-filter-confirm-title";
+  title.textContent = PLUGIN_NAME;
+
+  message.className = "pepper-store-filter-confirm-message";
+
+  actions.className = "pepper-store-filter-confirm-actions";
+
+  cancelButton.type = "button";
+  cancelButton.className = "pepper-store-filter-confirm-cancel";
+  cancelButton.textContent = "Cancel";
+
+  confirmButton.type = "button";
+  confirmButton.className = "pepper-store-filter-confirm-submit";
+  confirmButton.textContent = "Confirm";
+
+  actions.append(cancelButton, confirmButton);
+  dialog.append(title, message, actions);
+  container.append(backdrop, dialog);
+  document.body.appendChild(container);
+
+  confirmModalState = {
+    container,
+    message,
+    cancelButton,
+    confirmButton,
+    resolve: null,
+    keydownHandler: null
+  };
+
+  return confirmModalState;
+}
+
+function closeConfirmModal(result) {
+  if (!confirmModalState?.resolve) {
+    return;
+  }
+
+  const resolve = confirmModalState.resolve;
+  confirmModalState.resolve = null;
+  confirmModalState.container.hidden = true;
+
+  if (confirmModalState.keydownHandler) {
+    document.removeEventListener("keydown", confirmModalState.keydownHandler, true);
+    confirmModalState.keydownHandler = null;
+  }
+
+  resolve(result);
+}
+
+function showConfirmModal(message, confirmLabel = "Confirm", cancelLabel = "Cancel") {
+  let modal = null;
+
+  try {
+    modal = ensureConfirmModal();
+  } catch {
+    return Promise.resolve(window.confirm(message));
+  }
+
+  if (modal.resolve) {
+    closeConfirmModal(false);
+  }
+
+  modal.message.textContent = message;
+  modal.confirmButton.textContent = confirmLabel;
+  modal.cancelButton.textContent = cancelLabel;
+  modal.container.hidden = false;
+
+  return new Promise((resolve) => {
+    modal.resolve = resolve;
+
+    modal.keydownHandler = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeConfirmModal(false);
+      }
+    };
+
+    document.addEventListener("keydown", modal.keydownHandler, true);
+
+    modal.confirmButton.onclick = () => closeConfirmModal(true);
+    modal.cancelButton.onclick = () => closeConfirmModal(false);
+    modal.container.onclick = (event) => {
+      if (
+        event.target === modal.container ||
+        event.target.classList.contains("pepper-store-filter-confirm-backdrop")
+      ) {
+        closeConfirmModal(false);
+      }
+    };
+
+    modal.confirmButton.focus();
+  });
 }
 
 function mergeStoreLists(...storeLists) {
@@ -597,8 +715,10 @@ function createFilterButton(merchant) {
     event.stopPropagation();
     event.stopImmediatePropagation();
 
-    const shouldAddStore = window.confirm(
-      `Do you want to add ${merchant.name} to the filtered stores?`
+    const shouldAddStore = await showConfirmModal(
+      `Do you want to add ${merchant.name} to the filtered stores?`,
+      "Add filter",
+      "Cancel"
     );
 
     if (!shouldAddStore) {
@@ -800,6 +920,87 @@ function injectStyles() {
     .pepper-store-filter-button:active {
       transform: translateY(1px);
       box-shadow: none;
+    }
+
+    .pepper-store-filter-confirm-modal[hidden] {
+      display: none !important;
+    }
+
+    .pepper-store-filter-confirm-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483646;
+    }
+
+    .pepper-store-filter-confirm-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.45);
+    }
+
+    .pepper-store-filter-confirm-dialog {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: min(360px, calc(100vw - 32px));
+      padding: 16px;
+      border: 1px solid #d8dde6;
+      border-radius: 8px;
+      color: #1f2933;
+      background: #fff;
+      box-shadow: 0 14px 36px rgba(15, 23, 42, 0.24);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      transform: translate(-50%, -50%);
+    }
+
+    .pepper-store-filter-confirm-title {
+      margin: 0 0 8px;
+      font-size: 17px;
+      line-height: 1.2;
+    }
+
+    .pepper-store-filter-confirm-message {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .pepper-store-filter-confirm-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .pepper-store-filter-confirm-actions button {
+      appearance: none;
+      padding: 8px 12px;
+      border: 1px solid #de5a00;
+      border-radius: 999px;
+      color: #fff;
+      background: #ff6400;
+      box-shadow: 0 1px 2px rgba(26, 33, 43, 0.14);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.35;
+      cursor: pointer;
+    }
+
+    .pepper-store-filter-confirm-actions .pepper-store-filter-confirm-cancel {
+      border-color: #d8dde6;
+      color: #1f2933;
+      background: #fff;
+    }
+
+    .pepper-store-filter-confirm-actions .pepper-store-filter-confirm-cancel:hover {
+      color: #fff;
+      border-color: #4b5563;
+      background: #4b5563;
+    }
+
+    .pepper-store-filter-confirm-actions .pepper-store-filter-confirm-submit:hover {
+      background: #e85b00;
     }
 
     .${DIMMED_CLASS} {

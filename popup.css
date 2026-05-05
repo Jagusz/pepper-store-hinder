@@ -319,3 +319,54 @@ li button:hover {
   font-weight: 500;
   text-align: center;
 }
+
+.confirm-modal[hidden] {
+  display: none;
+}
+
+.confirm-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.confirm-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.confirm-modal__dialog {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(300px, calc(100vw - 32px));
+  padding: 16px;
+  border: 1px solid var(--pepper-border);
+  border-radius: 8px;
+  background: var(--pepper-surface);
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.24);
+  transform: translate(-50%, -50%);
+}
+
+.confirm-modal__title {
+  margin: 0 0 8px;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.confirm-modal__message {
+  margin: 0;
+  color: var(--pepper-text);
+}
+
+.confirm-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.confirm-modal__actions .secondary {
+  margin-top: 0;
+}

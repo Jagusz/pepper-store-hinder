@@ -236,6 +236,7 @@ The same tests run in GitHub Actions.
 - `popup.js` - popup logic and store list management.
 - `popup.css` - popup styles.
 - `scripts/package-amo.ps1` - script that creates the AMO ZIP.
+- `scripts/run-android-firefox-dev.ps1` - script that starts an existing Android emulator and Firefox with the extension, without auto-installing dependencies.
 
 ## License
 

@@ -236,6 +236,7 @@ Te same testy są uruchamiane w GitHub Actions.
 - `popup.js` - logika popupu i zarządzania listą sklepów.
 - `popup.css` - style popupu.
 - `scripts/package-amo.ps1` - skrypt tworzący ZIP do AMO.
+- `scripts/run-android-firefox-dev.ps1` - skrypt uruchamiający istniejący emulator Androida i Firefoksa z dodatkiem bez automatycznej instalacji zależności.
 
 ## Licencja
 

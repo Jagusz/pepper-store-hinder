@@ -40,8 +40,13 @@ const hideUnfilteredBelowThresholdCheckbox = document.querySelector(
 const hideUnfilteredThresholdInput = document.querySelector(
   "#hide-unfiltered-threshold"
 );
+const confirmModal = document.querySelector("#confirm-modal");
+const confirmModalMessage = document.querySelector("#confirm-modal-message");
+const confirmModalConfirmButton = document.querySelector("#confirm-modal-confirm");
+const confirmModalCancelButton = document.querySelector("#confirm-modal-cancel");
 let latestSettings = { ...DEFAULT_SETTINGS };
 let settingsSaveQueue = Promise.resolve();
+let confirmModalResolver = null;
 
 function normalizeText(value) {
   return String(value || "")
@@ -59,6 +64,37 @@ function normalizeStoreName(value) {
 function setStatus(message, isWarning = false) {
   statusText.textContent = message;
   statusText.classList.toggle("warning", isWarning);
+}
+
+function closeConfirmModal(result) {
+  if (!confirmModalResolver) {
+    return;
+  }
+
+  const resolve = confirmModalResolver;
+  confirmModalResolver = null;
+  confirmModal.hidden = true;
+  resolve(result);
+}
+
+function showConfirmModal(message, confirmLabel = "Confirm", cancelLabel = "Cancel") {
+  if (!confirmModal || !confirmModalMessage || !confirmModalConfirmButton || !confirmModalCancelButton) {
+    return Promise.resolve(window.confirm(message));
+  }
+
+  if (confirmModalResolver) {
+    closeConfirmModal(false);
+  }
+
+  confirmModalMessage.textContent = message;
+  confirmModalConfirmButton.textContent = confirmLabel;
+  confirmModalCancelButton.textContent = cancelLabel;
+  confirmModal.hidden = false;
+
+  return new Promise((resolve) => {
+    confirmModalResolver = resolve;
+    confirmModalConfirmButton.focus();
+  });
 }
 
 function normalizeThresholdValue(value) {
@@ -366,9 +402,32 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
+confirmModal.addEventListener("click", (event) => {
+  if (event.target === confirmModal || event.target.classList.contains("confirm-modal__backdrop")) {
+    closeConfirmModal(false);
+  }
+});
+
+confirmModalConfirmButton.addEventListener("click", () => {
+  closeConfirmModal(true);
+});
+
+confirmModalCancelButton.addEventListener("click", () => {
+  closeConfirmModal(false);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && confirmModalResolver) {
+    event.preventDefault();
+    closeConfirmModal(false);
+  }
+});
+
 clearButton.addEventListener("click", async () => {
-  const shouldClearStores = window.confirm(
-    "Do you want to clear the hidden store list?"
+  const shouldClearStores = await showConfirmModal(
+    "Do you want to clear the hidden store list?",
+    "Clear list",
+    "Cancel"
   );
 
   if (!shouldClearStores) {
