@@ -62,9 +62,6 @@ Notes:
 - `web-ext` requires Firefox for Android to have `Remote debugging via USB` enabled in `Settings -> Developer tools`.
 - The current Android AMO-style package name from `.\scripts\package-amo.ps1` is `dist/deal-store-filter-android-<version>.zip`.
 - `.\scripts\test-android-install.ps1` is a small smoke test for the Android flow. It can reuse a running emulator through `-DeviceId` or start one through `-AvdName`, launches the main runner in a child process, and treats a successful `web-ext` connection to Firefox for Android as a pass.
-- In CI, the scripts switch to non-interactive mode automatically through `CI=true`. That means they never prompt for AVD choice, npm/web-ext installation, or Firefox APK paths.
-- The repo includes `.github/workflows/android-install-smoke.yml` for a self-hosted Windows runner labeled `android-emulator`.
-- That CI runner should already have Android SDK tools, an emulator-capable AVD, `Remote debugging via USB` enabled in Firefox for Android, and optionally repo variables such as `ANDROID_AVD_NAME`, `ANDROID_FIREFOX_PACKAGE`, and `ANDROID_FIREFOX_APK_PATH`.
 
 Why not Docker by default:
 
