@@ -1,0 +1,69 @@
+name: Android Install Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - android
+    paths:
+      - "content.js"
+      - "popup.js"
+      - "popup.html"
+      - "popup.css"
+      - "manifest.json"
+      - "scripts/run-android-firefox-dev.ps1"
+      - "scripts/test-android-install.ps1"
+      - ".github/workflows/android-install-smoke.yml"
+
+jobs:
+  smoke-install:
+    runs-on:
+      - self-hosted
+      - windows
+      - android-emulator
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install web-ext
+        shell: pwsh
+        run: npm install --global web-ext
+
+      - name: Validate extension sources
+        shell: pwsh
+        run: |
+          node --check content.js
+          node --check popup.js
+          node tests/content.test.js
+          node tests/manifest.test.js
+          node tests/manifest-android.test.js
+
+      - name: Run Android install smoke test
+        shell: pwsh
+        env:
+          ANDROID_AVD_NAME: ${{ vars.ANDROID_AVD_NAME }}
+          ANDROID_FIREFOX_PACKAGE: ${{ vars.ANDROID_FIREFOX_PACKAGE }}
+          ANDROID_FIREFOX_APK_PATH: ${{ vars.ANDROID_FIREFOX_APK_PATH }}
+        run: |
+          $args = @("-Debug")
+
+          if (-not [string]::IsNullOrWhiteSpace($env:ANDROID_AVD_NAME)) {
+            $args += @("-AvdName", $env:ANDROID_AVD_NAME)
+          }
+
+          if (-not [string]::IsNullOrWhiteSpace($env:ANDROID_FIREFOX_PACKAGE)) {
+            $args += @("-FirefoxPackage", $env:ANDROID_FIREFOX_PACKAGE)
+          }
+
+          if (-not [string]::IsNullOrWhiteSpace($env:ANDROID_FIREFOX_APK_PATH)) {
+            $args += @("-FirefoxApkPath", $env:ANDROID_FIREFOX_APK_PATH)
+          }
+
+          ./scripts/test-android-install.ps1 @args

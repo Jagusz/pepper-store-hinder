@@ -21,6 +21,13 @@ $ErrorActionPreference = "Stop"
 $script:DebugLoggingEnabled = $PSBoundParameters.ContainsKey("Debug")
 $script:DefaultWebExtAdbDiscoveryTimeoutMs = 180000
 
+function Test-IsCiEnvironment() {
+  $ciValue = "$($env:CI)".Trim()
+  return $ciValue -match '^(1|true|yes)$'
+}
+
+$script:NonInteractiveMode = Test-IsCiEnvironment
+
 function Write-Step([string]$Message) {
   Write-Host "==> $Message" -ForegroundColor Cyan
 }
@@ -264,11 +271,19 @@ function Find-CommandPath([string[]]$Names) {
 }
 
 function Prompt-YesNo([string]$Question) {
+  if ($script:NonInteractiveMode) {
+    throw "Cannot prompt in CI/non-interactive mode: $Question"
+  }
+
   $response = Read-Host "$Question [y/N]"
   return $response -match "^(y|yes|t|tak)$"
 }
 
 function Prompt-ExistingFilePath([string]$Question, [string]$ExpectedExtension = "") {
+  if ($script:NonInteractiveMode) {
+    throw "Cannot prompt for a file path in CI/non-interactive mode: $Question"
+  }
+
   while ($true) {
     $response = (Read-Host $Question).Trim()
     if (-not $response) {
@@ -297,6 +312,15 @@ function Select-OptionInteractive {
 
   if (-not $Options -or $Options.Count -eq 0) {
     return $null
+  }
+
+  if ($script:NonInteractiveMode) {
+    if ($Options.Count -eq 1) {
+      Write-DebugLog "CI/non-interactive mode auto-selected the only available option: $($Options[0])"
+      return $Options[0]
+    }
+
+    throw "Multiple options are available in CI/non-interactive mode. Pass an explicit value instead."
   }
 
   if (-not $Host.UI.RawUI) {
@@ -557,6 +581,14 @@ function Ensure-NpmPath([string]$PreferredPath, [switch]$DryRunMode) {
     return $null
   }
 
+  if ($script:NonInteractiveMode) {
+    throw @"
+npm was not found in CI/non-interactive mode.
+
+Install Node.js/npm on the runner ahead of time, or pass -NpmBin explicitly.
+"@
+  }
+
   if (-not (Prompt-YesNo "npm was not found. Install Node.js LTS (includes npm) with winget now?")) {
     return $null
   }
@@ -592,6 +624,14 @@ function Ensure-WebExtPath([string]$PreferredPath, [string]$ResolvedNpmPath, [sw
   if ($DryRunMode) {
     Write-Hint "Dry run: web-ext was not found. The script would ask to install it with npm."
     return $null
+  }
+
+  if ($script:NonInteractiveMode) {
+    throw @"
+web-ext was not found in CI/non-interactive mode.
+
+Install web-ext on the runner ahead of time, or pass -WebExtBin explicitly.
+"@
   }
 
   if (-not (Prompt-YesNo "web-ext was not found. Install it globally with npm now?")) {
@@ -911,7 +951,23 @@ function Ensure-FirefoxInstalled {
     return $null
   }
 
-  if (-not (Prompt-YesNo "No Firefox for Android package was found on the emulator. Install one from a local APK now?")) {
+  $resolvedFirefoxApkPath = $PreferredApkPath
+  if ($resolvedFirefoxApkPath) {
+    if (-not (Test-Path -LiteralPath $resolvedFirefoxApkPath)) {
+      throw "Firefox APK path does not exist: $resolvedFirefoxApkPath"
+    }
+    $resolvedFirefoxApkPath = (Resolve-Path -LiteralPath $resolvedFirefoxApkPath).Path
+  }
+
+  if (-not $resolvedFirefoxApkPath -and $script:NonInteractiveMode) {
+    throw @"
+No Mozilla Android browser package was detected on $TargetDeviceId in CI/non-interactive mode.
+
+Install Firefox into the emulator image ahead of time, or pass -FirefoxApkPath to install it automatically.
+"@
+  }
+
+  if (-not $resolvedFirefoxApkPath -and -not (Prompt-YesNo "No Firefox for Android package was found on the emulator. Install one from a local APK now?")) {
     throw @"
 No Mozilla Android browser package was detected on $TargetDeviceId.
 
@@ -920,13 +976,7 @@ Install Firefox for Android into the emulator first, or run the script again wit
 "@
   }
 
-  $resolvedFirefoxApkPath = $PreferredApkPath
-  if ($resolvedFirefoxApkPath) {
-    if (-not (Test-Path -LiteralPath $resolvedFirefoxApkPath)) {
-      throw "Firefox APK path does not exist: $resolvedFirefoxApkPath"
-    }
-    $resolvedFirefoxApkPath = (Resolve-Path -LiteralPath $resolvedFirefoxApkPath).Path
-  } else {
+  if (-not $resolvedFirefoxApkPath) {
     $resolvedFirefoxApkPath = Prompt-ExistingFilePath `
       -Question "Enter the full path to a Firefox Android APK (.apk), or leave empty to cancel" `
       -ExpectedExtension ".apk"
@@ -1040,10 +1090,24 @@ if (-not $DeviceId) {
 
   if (-not $AvdName) {
     if ($availableAvds.Count -gt 0) {
-      Write-DebugLog "No -AvdName provided; invoking interactive selector."
-      $AvdName = Select-OptionInteractive `
-        -Title "Choose an Android Virtual Device" `
-        -Options $availableAvds
+      if ($script:NonInteractiveMode) {
+        if ($availableAvds.Count -eq 1) {
+          $AvdName = $availableAvds[0]
+          Write-DebugLog "CI/non-interactive mode auto-selected only available AVD: $AvdName"
+        } else {
+          throw @"
+No -AvdName was provided in CI/non-interactive mode, and multiple AVDs are available.
+
+Pass -AvdName explicitly. Available AVDs:
+$($availableAvds -join [Environment]::NewLine)
+"@
+        }
+      } else {
+        Write-DebugLog "No -AvdName provided; invoking interactive selector."
+        $AvdName = Select-OptionInteractive `
+          -Title "Choose an Android Virtual Device" `
+          -Options $availableAvds
+      }
     } else {
       throw "No running emulator and no AVD found. Create an Android Virtual Device first."
     }
