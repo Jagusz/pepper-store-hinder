@@ -58,7 +58,7 @@ Zrealizuj na Store name
 
 The text fallback also cleans appended website labels, CTA button text, and voucher codes, so the filter button does not receive names like `FlaconiSPRINGTIMEPobierz kod`.
 
-On Pepper's `/nowe` listing, the first cards may be re-rendered by the frontend shortly after the initial HTML is painted. To avoid losing the category or store name, the extension stores structured deal data from `ThreadMainListItemNormalizer` in an internal cache and can reuse it later even if Pepper removes or replaces the normalizer in the DOM.
+On Pepper deal listings, the first cards may be re-rendered by the frontend shortly after the initial HTML is painted. To avoid losing the category or store name, the extension starts at `document_start`, observes the DOM before `body` exists, stores structured deal data from `ThreadMainListItemNormalizer` in an internal cache, and can reuse it later even if Pepper removes or replaces the normalizer in the DOM.
 
 When a store can be detected, the extension adds this button next to the deal:
 
@@ -143,6 +143,7 @@ dist/deal-store-filter-<manifest-version>.zip
 The ZIP contains only the files required to run the add-on:
 
 - `manifest.json`
+- `i18n.js`
 - `content.js`
 - `popup.html`
 - `popup.js`
@@ -218,6 +219,8 @@ The tests cover, among other things:
 - ignoring `Discussion` entries,
 - skipping premature text fallback for cards that already expose a Pepper normalizer,
 - reusing cached `ThreadMainListItemNormalizer` data after Pepper removes the normalizer from the first cards,
+- adding the missing category button after a card first appears with only a store button,
+- first-card cases where Pepper renders an empty normalizer before the full category data arrives,
 - manifest declarations required for publishing.
 
 The same tests run in GitHub Actions.
@@ -225,6 +228,7 @@ The same tests run in GitHub Actions.
 ## Files
 
 - `manifest.json` - Firefox Manifest V2 add-on configuration.
+- `i18n.js` - shared translations and UI language selection logic.
 - `content.js` - logic running on supported websites.
 - `popup.html` - popup HTML.
 - `popup.js` - popup logic and store list management.

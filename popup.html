@@ -11,19 +11,25 @@
       <section id="main-view" class="popup-view">
         <header>
           <div>
-            <h1>Deal Store Filter</h1>
-            <span>Firefox Sync</span>
+            <h1 id="main-title">Deal Store Filter</h1>
+            <span id="sync-badge">Firefox Sync</span>
           </div>
           <button
             id="settings-toggle"
             class="icon-button"
             type="button"
             aria-controls="settings-view"
+            aria-label="Settings"
             title="Settings"
           >&#9881;</button>
         </header>
 
-        <div class="filter-tabs" role="tablist" aria-label="Filter type">
+        <div
+          id="filter-tabs"
+          class="filter-tabs"
+          role="tablist"
+          aria-label="Filter type"
+        >
           <button
             id="tab-shops"
             class="tab-button is-active"
@@ -37,7 +43,7 @@
             type="button"
             role="tab"
             aria-selected="false"
-          >Category</button>
+          >Categories</button>
         </div>
 
         <form id="store-form">
@@ -60,35 +66,47 @@
             id="settings-back"
             class="icon-button"
             type="button"
+            aria-label="Back"
             title="Back"
           >&#8592;</button>
-          <h1>Settings</h1>
+          <h1 id="settings-title">Settings</h1>
         </header>
 
         <div class="settings-panel">
+          <label class="settings-field" for="ui-language">
+            <span id="ui-language-label">Language</span>
+            <select id="ui-language">
+              <option value="auto">Automatic (page/browser)</option>
+              <option value="pl">Polski</option>
+              <option value="en">English</option>
+            </select>
+          </label>
           <label class="checkbox-row" for="use-firefox-sync">
             <input id="use-firefox-sync" type="checkbox">
-            <span>Firefox Sync <small>(requires Firefox account)</small></span>
+            <span>
+              <span id="use-firefox-sync-label">Firefox Sync</span>
+              <small id="use-firefox-sync-hint">(requires Firefox account)</small>
+            </span>
           </label>
           <label class="checkbox-row" for="always-filter-on-open">
             <input id="always-filter-on-open" type="checkbox">
-            <span>Always filter when opening a page</span>
+            <span id="always-filter-on-open-label">Always filter when opening a page</span>
           </label>
           <label class="checkbox-row" for="category-filters-enabled">
             <input id="category-filters-enabled" type="checkbox">
-            <span>Enable category filters</span>
+            <span id="category-filters-enabled-label">Enable category filters</span>
           </label>
           <label class="checkbox-row" for="show-filtered-as-dimmed">
             <input id="show-filtered-as-dimmed" type="checkbox">
-            <span>Show filtered deals as compact previews</span>
+            <span id="show-filtered-as-dimmed-label">Show filtered deals as compact previews</span>
           </label>
           <div class="settings-option">
             <label class="checkbox-row" for="show-filtered-above-threshold">
               <input id="show-filtered-above-threshold" type="checkbox">
-              <span>Show filtered deals above this threshold</span>
+              <span id="show-filtered-above-threshold-label">Show filtered deals above this threshold</span>
             </label>
             <label class="settings-field" for="show-filtered-threshold">
-              <span>Show filtered deals threshold</span>
+              <span id="show-filtered-threshold-label">Show filtered deals threshold</span>
               <input
                 id="show-filtered-threshold"
                 type="number"
@@ -102,10 +120,10 @@
           <div class="settings-option">
             <label class="checkbox-row" for="hide-unfiltered-below-threshold">
               <input id="hide-unfiltered-below-threshold" type="checkbox">
-              <span>Hide deals below this threshold</span>
+              <span id="hide-unfiltered-below-threshold-label">Hide deals below this threshold</span>
             </label>
             <label class="settings-field" for="hide-unfiltered-threshold">
-              <span>Hide deals threshold</span>
+              <span id="hide-unfiltered-threshold-label">Hide deals threshold</span>
               <input
                 id="hide-unfiltered-threshold"
                 type="number"
@@ -117,13 +135,14 @@
             </label>
             <label class="checkbox-row" for="show-below-threshold-as-dimmed">
               <input id="show-below-threshold-as-dimmed" type="checkbox">
-              <span>Show deals below threshold as compact previews</span>
+              <span id="show-below-threshold-as-dimmed-label">Show deals below threshold as compact previews</span>
             </label>
           </div>
         </div>
       </section>
     </main>
 
+    <script src="i18n.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

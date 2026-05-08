@@ -58,7 +58,7 @@ Zrealizuj na Nazwa sklepu
 
 Fallback tekstowy czyści też doklejone etykiety strony, przyciski CTA i kody kuponów, aby przycisk nie dostał nazwy w stylu `FlaconiSPRINGTIMEPobierz kod`.
 
-Na listach `Pepper /nowe` pierwsze karty bywają przebudowywane przez frontend już po początkowym wyrenderowaniu. Żeby nie zgubić kategorii lub nazwy sklepu, rozszerzenie zapisuje ustrukturyzowane dane oferty z `ThreadMainListItemNormalizer` do wewnętrznego cache i może użyć ich ponownie, nawet jeśli Pepper później usunie albo podmieni sam normalizer w DOM.
+Na listach ofert Peppera pierwsze karty bywają przebudowywane przez frontend już po początkowym wyrenderowaniu. Żeby nie zgubić kategorii lub nazwy sklepu, rozszerzenie startuje na `document_start`, obserwuje DOM jeszcze przed pojawieniem się `body`, zapisuje ustrukturyzowane dane oferty z `ThreadMainListItemNormalizer` do wewnętrznego cache i może użyć ich ponownie, nawet jeśli Pepper później usunie albo podmieni sam normalizer w DOM.
 
 Jeśli uda się ustalić sklep, rozszerzenie dodaje przy ofercie przycisk:
 
@@ -143,6 +143,7 @@ dist/deal-store-filter-<manifest-version>.zip
 ZIP zawiera tylko pliki potrzebne do działania dodatku:
 
 - `manifest.json`
+- `i18n.js`
 - `content.js`
 - `popup.html`
 - `popup.js`
@@ -218,6 +219,8 @@ Testy sprawdzają między innymi:
 - ignorowanie wpisów typu `Discussion`,
 - pomijanie przedwczesnego fallbacku tekstowego dla kart, które mają już normalizer Peppera,
 - ponowne użycie zcache'owanych danych `ThreadMainListItemNormalizer`, gdy Pepper usunie normalizer z pierwszych kart,
+- ponowne dołożenie przycisku kategorii, gdy karta najpierw pojawi się tylko z przyciskiem sklepu,
+- przypadek pierwszych kart, w których Pepper najpierw renderuje pusty normalizer, a pełne dane kategorii pojawiają się dopiero chwilę później,
 - deklaracje manifestu wymagane do publikacji.
 
 Te same testy są uruchamiane w GitHub Actions.
@@ -225,6 +228,7 @@ Te same testy są uruchamiane w GitHub Actions.
 ## Pliki
 
 - `manifest.json` - konfiguracja dodatku Firefox Manifest V2.
+- `i18n.js` - współdzielone tłumaczenia i logika wyboru języka UI.
 - `content.js` - logika działająca na obsługiwanych stronach.
 - `popup.html` - HTML popupu.
 - `popup.js` - logika popupu i zarządzania listą sklepów.

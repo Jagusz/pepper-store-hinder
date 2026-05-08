@@ -57,6 +57,21 @@ test("manifest uses publication-ready name and description", () => {
   );
 });
 
+test("manifest loads the shared i18n helper before the content script", () => {
+  const manifest = loadManifest();
+
+  assert.equal(
+    JSON.stringify(manifest.content_scripts[0].js),
+    JSON.stringify(["i18n.js", "content.js"])
+  );
+});
+
+test("manifest runs the listing content script before Pepper hydrates cards", () => {
+  const manifest = loadManifest();
+
+  assert.equal(manifest.content_scripts[0].run_at, "document_start");
+});
+
 // Verifies the add-on ID is stable and matches the broader product name.
 test("manifest keeps a stable Gecko extension id", () => {
   const manifest = loadManifest();

@@ -13,6 +13,81 @@ const FILTER_WRAPPER_SELECTOR = ".pepper-store-filter-wrapper";
 const DEBUG_STORAGE_KEY = "pepperStoreFilterDebug";
 const DEBUG_QUERY_PARAM = "pshdebug";
 const PLUGIN_NAME = "Deal Store Filter";
+const I18N = globalThis.DealStoreFilterI18n || {
+  DEFAULT_UI_LANGUAGE: "auto",
+  normalizeUiLanguageSetting: (value) => {
+    const normalized = String(value || "").trim().toLowerCase();
+
+    return ["auto", "en", "pl"].includes(normalized) ? normalized : "auto";
+  },
+  resolveUiLanguage: (setting, options = {}) => {
+    const normalizedSetting = String(setting || "").trim().toLowerCase();
+
+    if (normalizedSetting === "en" || normalizedSetting === "pl") {
+      return normalizedSetting;
+    }
+
+    const pageLanguage = String(options.pageLanguage || "").trim().toLowerCase();
+
+    if (pageLanguage) {
+      return pageLanguage.startsWith("pl") ? "pl" : "en";
+    }
+
+    const candidates = [
+      options.browserLanguage,
+      ...(Array.isArray(options.browserLanguages) ? options.browserLanguages : [])
+    ]
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter(Boolean);
+
+    return candidates.some((value) => value.startsWith("pl")) ? "pl" : "en";
+  },
+  t: (language, key, params = {}) => {
+    const fallbackTranslations = {
+      en: {
+        removeFilterAction: "Remove filter",
+        removeFilterActionTitle: "Remove filter for {name}",
+        dimmedStoreNotice: "{pluginName}: Filtered by store filter",
+        dimmedCategoryNotice: "{pluginName}: Filtered by category filter",
+        dimmedThresholdNotice: "{pluginName}: Filtered by threshold",
+        dimmedThresholdNoticeWithValue:
+          "{pluginName}: Filtered by threshold < {value}\u00B0",
+        filterStoreButton: "Hide store: {name}",
+        filterStoreButtonTitle: "Hide deals from store: {name}",
+        filterCategoryButton: "Hide category: {name}",
+        filterCategoryButtonTitle: "Hide deals from category: {name}",
+        addStoreConfirm: "Do you want to add {name} to the filtered stores?",
+        addCategoryConfirm: "Do you want to add {name} to the filtered categories?"
+      },
+      pl: {
+        removeFilterAction: "Usu\u0144 filtr",
+        removeFilterActionTitle: "Usu\u0144 filtr dla {name}",
+        dimmedStoreNotice: "{pluginName}: Ukryte przez filtr sklepu",
+        dimmedCategoryNotice: "{pluginName}: Ukryte przez filtr kategorii",
+        dimmedThresholdNotice: "{pluginName}: Ukryte przez pr\u00F3g",
+        dimmedThresholdNoticeWithValue:
+          "{pluginName}: Ukryte przez pr\u00F3g < {value}\u00B0",
+        filterStoreButton: "Ukryj sklep: {name}",
+        filterStoreButtonTitle: "Ukryj oferty ze sklepu: {name}",
+        filterCategoryButton: "Ukryj kategori\u0119: {name}",
+        filterCategoryButtonTitle: "Ukryj oferty z kategorii: {name}",
+        addStoreConfirm:
+          "Czy chcesz doda\u0107 {name} do filtrowanych sklep\u00F3w?",
+        addCategoryConfirm:
+          "Czy chcesz doda\u0107 {name} do filtrowanych kategorii?"
+      }
+    };
+    const dictionary = fallbackTranslations[language] || fallbackTranslations.en;
+    const template = dictionary[key] || fallbackTranslations.en[key] || key;
+
+    return String(template).replace(/\{(\w+)\}/g, (match, name) => {
+      return Object.prototype.hasOwnProperty.call(params, name)
+        ? String(params[name])
+        : match;
+    });
+  }
+};
+const DEFAULT_UI_LANGUAGE = I18N.DEFAULT_UI_LANGUAGE;
 const DEFAULT_SETTINGS = {
   useFirefoxSync: true,
   alwaysFilterOnPageOpen: true,
@@ -23,7 +98,8 @@ const DEFAULT_SETTINGS = {
   showFilteredAboveThreshold: false,
   hideUnfilteredBelowThreshold: false,
   showFilteredThreshold: null,
-  hideUnfilteredThreshold: null
+  hideUnfilteredThreshold: null,
+  uiLanguage: DEFAULT_UI_LANGUAGE
 };
 
 let hiddenStores = [];
@@ -36,6 +112,7 @@ let showFilteredAboveThreshold = false;
 let hideUnfilteredBelowThreshold = false;
 let showFilteredThreshold = null;
 let hideUnfilteredThreshold = null;
+let currentUiLanguage = "en";
 let lastDebugSignature = "";
 let applyFiltersTimer = null;
 const threadDataCache = new Map();
@@ -75,6 +152,30 @@ function normalizeStoreName(value) {
   return String(value || "")
     .trim()
     .replace(/\s+/g, " ");
+}
+
+function getCurrentBrowserLanguage() {
+  return browser.i18n?.getUILanguage?.() || navigator.language || "";
+}
+
+function getCurrentBrowserLanguages() {
+  return Array.isArray(navigator.languages) ? navigator.languages : [];
+}
+
+function getPageLanguage() {
+  return document.documentElement?.lang || "";
+}
+
+function resolvePageUiLanguage(settings = null) {
+  return I18N.resolveUiLanguage(settings?.uiLanguage, {
+    pageLanguage: getPageLanguage(),
+    browserLanguage: getCurrentBrowserLanguage(),
+    browserLanguages: getCurrentBrowserLanguages()
+  });
+}
+
+function t(key, params = {}) {
+  return I18N.t(currentUiLanguage, key, params);
 }
 
 function normalizeThresholdValue(value) {
@@ -163,7 +264,8 @@ function normalizeSettings(value) {
     showFilteredThreshold:
       normalizeThresholdValue(value?.showFilteredThreshold) ?? legacyThreshold,
     hideUnfilteredThreshold:
-      normalizeThresholdValue(value?.hideUnfilteredThreshold) ?? legacyThreshold
+      normalizeThresholdValue(value?.hideUnfilteredThreshold) ?? legacyThreshold,
+    uiLanguage: I18N.normalizeUiLanguageSetting(value?.uiLanguage)
   };
 }
 
@@ -356,6 +458,58 @@ function getThreadIdForCard(card, thread = null) {
   return "";
 }
 
+function createStructuredThreadRecord(card, thread) {
+  const threadId = getThreadIdForCard(card, thread);
+
+  if (!threadId || !thread) {
+    return null;
+  }
+
+  return {
+    threadId,
+    type: thread.type || null,
+    merchant: thread.merchant?.merchantName
+      ? {
+          merchantName: thread.merchant.merchantName
+        }
+      : null,
+    linkHost: thread.linkHost || "",
+    mainGroup: thread.mainGroup?.threadGroupName
+      ? {
+          threadGroupName: thread.mainGroup.threadGroupName,
+          threadGroupUrlName: thread.mainGroup.threadGroupUrlName || ""
+        }
+      : null,
+    temperature: thread.temperature ?? null
+  };
+}
+
+function mergeThreadDataRecords(previousRecord, nextRecord) {
+  if (!previousRecord) {
+    return nextRecord || null;
+  }
+
+  if (!nextRecord) {
+    return previousRecord;
+  }
+
+  return {
+    threadId: nextRecord.threadId || previousRecord.threadId || "",
+    type: nextRecord.type || previousRecord.type || null,
+    merchant: nextRecord.merchant?.merchantName
+      ? nextRecord.merchant
+      : previousRecord.merchant,
+    linkHost: nextRecord.linkHost || previousRecord.linkHost || "",
+    mainGroup: nextRecord.mainGroup?.threadGroupName
+      ? nextRecord.mainGroup
+      : previousRecord.mainGroup,
+    temperature:
+      nextRecord.temperature === null || nextRecord.temperature === undefined
+        ? previousRecord.temperature ?? null
+        : nextRecord.temperature
+  };
+}
+
 function getThreadDataFromElement(element) {
   const candidates = [
     element,
@@ -375,29 +529,17 @@ function getThreadDataFromElement(element) {
 }
 
 function cacheStructuredThreadData(card, thread) {
-  const threadId = getThreadIdForCard(card, thread);
+  const nextRecord = createStructuredThreadRecord(card, thread);
 
-  if (!threadId || !thread) {
+  if (!nextRecord?.threadId) {
     return;
   }
 
-  threadDataCache.set(threadId, {
-    threadId,
-    type: thread.type || null,
-    merchant: thread.merchant?.merchantName
-      ? {
-          merchantName: thread.merchant.merchantName
-        }
-      : null,
-    linkHost: thread.linkHost || "",
-    mainGroup: thread.mainGroup?.threadGroupName
-      ? {
-          threadGroupName: thread.mainGroup.threadGroupName,
-          threadGroupUrlName: thread.mainGroup.threadGroupUrlName || ""
-        }
-      : null,
-    temperature: thread.temperature ?? null
-  });
+  const previousRecord = threadDataCache.get(nextRecord.threadId) || null;
+  threadDataCache.set(
+    nextRecord.threadId,
+    mergeThreadDataRecords(previousRecord, nextRecord)
+  );
 }
 
 function getCachedThreadDataForCard(card) {
@@ -511,8 +653,13 @@ function getNormalizerItems() {
 
     const thread = getThreadDataFromElement(normalizer);
     cacheStructuredThreadData(card, thread);
+    const cachedThread = card ? getCachedThreadDataForCard(card) : null;
+    const resolvedThread = mergeThreadDataRecords(
+      cachedThread,
+      createStructuredThreadRecord(card, thread)
+    );
     const item = card
-      ? createItemFromThread(card, normalizer, thread || getCachedThreadDataForCard(card))
+      ? createItemFromThread(card, normalizer, resolvedThread)
       : null;
 
     if (item) {
@@ -527,7 +674,10 @@ function getNormalizerItems() {
     }
 
     const normalizer = card.querySelector?.(NORMALIZER_SELECTOR) || card;
-    const thread = getThreadDataFromElement(card) || getCachedThreadDataForCard(card);
+    const thread = mergeThreadDataRecords(
+      getCachedThreadDataForCard(card),
+      createStructuredThreadRecord(card, getThreadDataFromElement(card))
+    );
     const item = createItemFromThread(card, normalizer, thread);
 
     if (item) {
@@ -595,8 +745,8 @@ function createDimmedNotice({ badgeText, noticeKey, merchant = null, onRemove = 
   if (onRemove && merchant) {
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = "Remove filter";
-    button.title = `Remove filter for ${merchant.name}`;
+    button.textContent = t("removeFilterAction");
+    button.title = t("removeFilterActionTitle", { name: merchant.name });
 
     button.addEventListener("click", async (event) => {
       event.preventDefault();
@@ -613,12 +763,6 @@ function createDimmedNotice({ badgeText, noticeKey, merchant = null, onRemove = 
 }
 
 function ensureDimmedNotice(card, config) {
-  const existingNotice = card.querySelector?.(DIMMED_NOTICE_SELECTOR);
-
-  if (existingNotice?.dataset?.noticeKey === config.noticeKey) {
-    return;
-  }
-
   removeDimmedNotice(card);
 
   const notice = createDimmedNotice(config);
@@ -657,7 +801,7 @@ function hideCard(card) {
 
 function getStoreDimmedNoticeConfig(merchant) {
   return {
-    badgeText: `${PLUGIN_NAME}: Filtered by store filter`,
+    badgeText: t("dimmedStoreNotice", { pluginName: PLUGIN_NAME }),
     noticeKey: `store:${normalizeText(merchant.name)}`,
     merchant,
     onRemove: async () => {
@@ -669,7 +813,7 @@ function getStoreDimmedNoticeConfig(merchant) {
 
 function getCategoryDimmedNoticeConfig(category) {
   return {
-    badgeText: `${PLUGIN_NAME}: Filtered by category filter`,
+    badgeText: t("dimmedCategoryNotice", { pluginName: PLUGIN_NAME }),
     noticeKey: `category:${normalizeText(category.name)}`,
     merchant: category,
     onRemove: async () => {
@@ -681,8 +825,11 @@ function getCategoryDimmedNoticeConfig(category) {
 
 function getThresholdDimmedNoticeConfig() {
   const thresholdLabel = hideUnfilteredThreshold === null
-    ? `${PLUGIN_NAME}: Filtered by threshold`
-    : `${PLUGIN_NAME}: Filtered by threshold < ${hideUnfilteredThreshold}\u00B0`;
+    ? t("dimmedThresholdNotice", { pluginName: PLUGIN_NAME })
+    : t("dimmedThresholdNoticeWithValue", {
+        pluginName: PLUGIN_NAME,
+        value: hideUnfilteredThreshold
+      });
 
   return {
     badgeText: thresholdLabel,
@@ -763,14 +910,17 @@ async function saveHiddenCategory(categoryName) {
   return setStoredHiddenCategories([...currentCategories, cleanedCategoryName]);
 }
 
+function configureStoreFilterButton(button, merchant) {
+  button.type = "button";
+  button.className = "pepper-store-filter-button pepper-store-filter-button-store";
+  button.textContent = t("filterStoreButton", { name: merchant.name });
+  button.title = t("filterStoreButtonTitle", { name: merchant.name });
+}
+
 function createStoreFilterButton(merchant) {
   const button = document.createElement("button");
 
-  button.type = "button";
-  button.className =
-    "pepper-store-filter-button pepper-store-filter-button-store";
-  button.textContent = `Filtruj sklep: ${merchant.name}`;
-  button.title = `Ukryj oferty ze sklepu: ${merchant.name}`;
+  configureStoreFilterButton(button, merchant);
 
   button.addEventListener("click", async (event) => {
     event.preventDefault();
@@ -778,7 +928,7 @@ function createStoreFilterButton(merchant) {
     event.stopImmediatePropagation();
 
     const shouldAddStore = window.confirm(
-      `Do you want to add ${merchant.name} to the filtered stores?`
+      t("addStoreConfirm", { name: merchant.name })
     );
 
     if (!shouldAddStore) {
@@ -792,13 +942,17 @@ function createStoreFilterButton(merchant) {
   return button;
 }
 
+function configureCategoryFilterButton(button, category) {
+  button.type = "button";
+  button.className = "pepper-store-filter-button pepper-store-filter-button-category";
+  button.title = t("filterCategoryButtonTitle", { name: category.name });
+  button.textContent = t("filterCategoryButton", { name: category.name });
+}
+
 function createCategoryFilterButton(category) {
   const button = document.createElement("button");
 
-  button.type = "button";
-  button.className = "pepper-store-filter-button pepper-store-filter-button-category";
-  button.title = `Ukryj oferty z kategorii: ${category.name}`;
-  button.textContent = `Filtruj kategori\u0119: ${category.name}`;
+  configureCategoryFilterButton(button, category);
 
   button.addEventListener("click", async (event) => {
     event.preventDefault();
@@ -806,7 +960,7 @@ function createCategoryFilterButton(category) {
     event.stopImmediatePropagation();
 
     const shouldAddCategory = window.confirm(
-      `Do you want to add ${category.name} to the filtered categories?`
+      t("addCategoryConfirm", { name: category.name })
     );
 
     if (!shouldAddCategory) {
@@ -824,6 +978,32 @@ function createFilterButton(merchant) {
   return createStoreFilterButton(merchant);
 }
 
+function ensureStoreFilterButton(wrapper, merchant) {
+  const existingButton = wrapper.querySelector?.(".pepper-store-filter-button-store");
+
+  if (existingButton) {
+    configureStoreFilterButton(existingButton, merchant);
+    return existingButton;
+  }
+
+  const button = createStoreFilterButton(merchant);
+  wrapper.appendChild(button);
+  return button;
+}
+
+function ensureCategoryFilterButton(wrapper, category) {
+  const existingButton = wrapper.querySelector?.(".pepper-store-filter-button-category");
+
+  if (existingButton) {
+    configureCategoryFilterButton(existingButton, category);
+    return existingButton;
+  }
+
+  const button = createCategoryFilterButton(category);
+  wrapper.appendChild(button);
+  return button;
+}
+
 function addFilterButton(item) {
   const existingWrapper = item.card.querySelector(FILTER_WRAPPER_SELECTOR);
   const hasStoreButton = Boolean(
@@ -832,26 +1012,18 @@ function addFilterButton(item) {
   const hasCategoryButton = Boolean(
     existingWrapper?.querySelector?.(".pepper-store-filter-button-category")
   );
-
-  if (
-    (!item.merchant || hasStoreButton) &&
-    (!item.category || hasCategoryButton)
-  ) {
-    return;
-  }
-
   const body = item.card.querySelector(".threadListCard-body");
   const target = body || item.card.querySelector(".thread-title") || item.normalizer;
   const beforeElement = body?.querySelector(".userHtml");
   const wrapper = existingWrapper || document.createElement("div");
 
   wrapper.className = "pepper-store-filter-wrapper";
-  if (item.merchant && !hasStoreButton) {
-    wrapper.appendChild(createStoreFilterButton(item.merchant));
+  if (item.merchant) {
+    ensureStoreFilterButton(wrapper, item.merchant);
   }
 
-  if (item.category && !hasCategoryButton) {
-    wrapper.appendChild(createCategoryFilterButton(item.category));
+  if (item.category) {
+    ensureCategoryFilterButton(wrapper, item.category);
   }
 
   if (existingWrapper) {
@@ -1193,6 +1365,7 @@ async function refreshStateFromStorage(resetFiltersForPage = false) {
   hideUnfilteredBelowThreshold = settings.hideUnfilteredBelowThreshold;
   showFilteredThreshold = settings.showFilteredThreshold;
   hideUnfilteredThreshold = settings.hideUnfilteredThreshold;
+  currentUiLanguage = resolvePageUiLanguage(settings);
   hiddenStores = await getStoredHiddenStores(settings);
   hiddenCategories = await getStoredHiddenCategories(settings);
   applyFilters();
@@ -1213,7 +1386,9 @@ async function loadHiddenStores() {
 }
 
 function observePageChanges() {
-  if (!document.body) {
+  const observerTarget = document.body || document.documentElement;
+
+  if (!observerTarget) {
     return;
   }
 
@@ -1224,7 +1399,7 @@ function observePageChanges() {
     debounceTimer = setTimeout(scheduleFollowUpScans, 150);
   });
 
-  observer.observe(document.body, {
+  observer.observe(observerTarget, {
     childList: true,
     subtree: true,
     attributes: true,
@@ -1265,11 +1440,18 @@ browser.storage.onChanged.addListener((changes, areaName) => {
 });
 
 browser.runtime?.onMessage?.addListener((message) => {
-  if (message?.type !== "dealStoreFilterRefresh") {
-    return undefined;
+  if (message?.type === "dealStoreFilterGetPageLanguage") {
+    return Promise.resolve({
+      pageLanguage: getPageLanguage(),
+      uiLanguage: resolvePageUiLanguage()
+    });
   }
 
-  return refreshStateFromStorage();
+  if (message?.type === "dealStoreFilterRefresh") {
+    return refreshStateFromStorage();
+  }
+
+  return undefined;
 });
 
 setInitialLoadingState(true);
@@ -1277,7 +1459,7 @@ injectStyles();
 warmStructuredThreadCache();
 loadHiddenStores();
 
-if (document.body) {
+if (document.body || document.documentElement) {
   observePageChanges();
 } else {
   window.addEventListener("DOMContentLoaded", observePageChanges, { once: true });
