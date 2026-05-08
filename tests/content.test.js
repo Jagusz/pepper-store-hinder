@@ -30,6 +30,10 @@ function createMockElement(tagName = "div") {
 }
 
 function loadContentScript(overrides = {}) {
+  const i18nSource = fs.readFileSync(
+    path.join(__dirname, "..", "i18n.js"),
+    "utf8"
+  );
   const source = fs.readFileSync(
     path.join(__dirname, "..", "content.js"),
     "utf8"
@@ -79,10 +83,15 @@ function loadContentScript(overrides = {}) {
     },
     MutationObserver: overrides.MutationObserver || class {
       observe() {}
+    },
+    navigator: overrides.navigator || {
+      language: "en-US",
+      languages: ["en-US"]
     }
   };
 
   vm.createContext(context);
+  vm.runInContext(i18nSource, context, { filename: "i18n.js" });
   vm.runInContext(source, context, { filename: "content.js" });
   return context;
 }
@@ -207,8 +216,47 @@ test("normalizeSettings falls back to the legacy shared threshold", () => {
       showFilteredAboveThreshold: true,
       hideUnfilteredBelowThreshold: true,
       showFilteredThreshold: 150,
-      hideUnfilteredThreshold: 150
+      hideUnfilteredThreshold: 150,
+      uiLanguage: "auto"
     })
+  );
+});
+
+test("resolvePageUiLanguage prefers Polish when the page language is Polish", () => {
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        lang: "pl-PL",
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: createMockElement
+    },
+    navigator: {
+      language: "en-US",
+      languages: ["en-US"]
+    }
+  });
+
+  assert.equal(
+    context.resolvePageUiLanguage({ uiLanguage: "auto" }),
+    "pl"
+  );
+});
+
+test("resolvePageUiLanguage falls back to the browser language when the page language is missing", () => {
+  const context = loadContentScript({
+    navigator: {
+      language: "pl-PL",
+      languages: ["pl-PL", "en-US"]
+    }
+  });
+
+  assert.equal(
+    context.resolvePageUiLanguage({ uiLanguage: "auto" }),
+    "pl"
   );
 });
 
@@ -432,6 +480,87 @@ test("getNormalizerItems reuses cached structured thread data after Pepper remov
   context.document.querySelectorAll = (selector) => {
     if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
       return [];
+    }
+
+    if (selector === 'article[id^="thread_"], article.thread, [data-t="thread"]') {
+      return [card];
+    }
+
+    return [];
+  };
+
+  const items = context.getNormalizerItems();
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].merchant.name, "Amazon.pl");
+  assert.equal(items[0].category.name, "Elektronika");
+});
+
+test("getNormalizerItems keeps the cached category when Pepper later returns partial thread data", () => {
+  const card = {
+    id: "thread_1276175",
+    textContent: "Google Pixelsnap Phone Case DostÄ™pne w Amazon.pl Dodane przez zakup_marzeĹ„",
+    appendChild: () => {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    getAttribute: () => null
+  };
+  const fullNormalizer = {
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1276175",
+            type: "Deal",
+            merchant: {
+              merchantName: "Amazon.pl"
+            },
+            mainGroup: {
+              threadGroupName: "Elektronika",
+              threadGroupUrlName: "elektronika"
+            }
+          }
+        }
+      }),
+    closest: () => card
+  };
+  const partialNormalizer = {
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1276175",
+            type: "Deal",
+            merchant: {
+              merchantName: "Amazon.pl"
+            },
+            mainGroup: null
+          }
+        }
+      }),
+    closest: () => card
+  };
+  const context = loadContentScript();
+
+  context.document.querySelectorAll = (selector) => {
+    if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+      return [fullNormalizer];
+    }
+
+    if (selector === 'article[id^="thread_"], article.thread, [data-t="thread"]') {
+      return [card];
+    }
+
+    return [];
+  };
+
+  context.warmStructuredThreadCache();
+
+  context.document.querySelectorAll = (selector) => {
+    if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+      return [partialNormalizer];
     }
 
     if (selector === 'article[id^="thread_"], article.thread, [data-t="thread"]') {
@@ -1099,6 +1228,293 @@ test("addFilterButton appends a missing category button into an existing wrapper
   assert.equal(existingWrapper.children.length, 2);
   assert.equal(
     existingWrapper.children[1].className.includes("pepper-store-filter-button-category"),
+    true
+  );
+});
+
+test("applyFilters adds both buttons when Pepper fills the thread data after an empty normalizer pass", () => {
+  let currentNormalizer = null;
+  let insertedWrapper = null;
+
+  function findButtonByClass(children, className) {
+    return children.find((child) => child.className?.includes(className)) || null;
+  }
+
+  function createTestElement(tagName) {
+    return {
+      tagName,
+      className: "",
+      textContent: "",
+      title: "",
+      type: "",
+      style: {},
+      dataset: {},
+      children: [],
+      appendChild(child) {
+        this.children.push(child);
+      },
+      querySelector(selector) {
+        if (selector === ".pepper-store-filter-button-store") {
+          return findButtonByClass(this.children, "pepper-store-filter-button-store");
+        }
+
+        if (selector === ".pepper-store-filter-button-category") {
+          return findButtonByClass(this.children, "pepper-store-filter-button-category");
+        }
+
+        return null;
+      },
+      addEventListener: () => {}
+    };
+  }
+
+  const userHtml = {
+    insertAdjacentElement: (_, element) => {
+      insertedWrapper = element;
+    }
+  };
+  const body = {
+    querySelector: (selector) => {
+      return selector === ".userHtml" ? userHtml : null;
+    },
+    appendChild: (element) => {
+      insertedWrapper = element;
+    }
+  };
+  const card = {
+    id: "thread_1277001",
+    textContent: "Oferta Dostepne w Amazon.pl Dodane przez tester",
+    dataset: {},
+    style: {},
+    appendChild: (element) => {
+      insertedWrapper = element;
+    },
+    querySelector: (selector) => {
+      if (selector === ".pepper-store-filter-wrapper") {
+        return insertedWrapper;
+      }
+
+      if (selector === ".pepper-store-filter-button") {
+        return insertedWrapper?.children?.[0] || null;
+      }
+
+      if (selector === ".threadListCard-body") {
+        return body;
+      }
+
+      if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+        return currentNormalizer;
+      }
+
+      return null;
+    },
+    querySelectorAll: () => []
+  };
+  const emptyNormalizer = {
+    getAttribute: () => "",
+    closest: () => card
+  };
+  const fullNormalizer = {
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1277001",
+            type: "Deal",
+            merchant: {
+              merchantName: "Amazon.pl"
+            },
+            mainGroup: {
+              threadGroupName: "Elektronika",
+              threadGroupUrlName: "elektronika"
+            }
+          }
+        }
+      }),
+    closest: () => card
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return currentNormalizer ? [currentNormalizer] : [];
+        }
+
+        if (selector === 'article[id^="thread_"], article.thread, [data-t="thread"]') {
+          return [card];
+        }
+
+        return [];
+      },
+      createElement: createTestElement
+    }
+  });
+
+  currentNormalizer = emptyNormalizer;
+  context.applyFilters();
+  assert.equal(insertedWrapper, null);
+
+  currentNormalizer = fullNormalizer;
+  context.applyFilters();
+
+  assert.ok(insertedWrapper);
+  assert.equal(insertedWrapper.children.length, 2);
+  assert.equal(
+    insertedWrapper.children.some((child) =>
+      child.className.includes("pepper-store-filter-button-store")
+    ),
+    true
+  );
+  assert.equal(
+    insertedWrapper.children.some((child) =>
+      child.className.includes("pepper-store-filter-button-category")
+    ),
+    true
+  );
+});
+
+test("applyFilters appends the missing category button when a card first renders with only a store button", () => {
+  let insertedWrapper = null;
+  let useStructuredThread = false;
+
+  function findButtonByClass(children, className) {
+    return children.find((child) => child.className?.includes(className)) || null;
+  }
+
+  function createTestElement(tagName) {
+    return {
+      tagName,
+      className: "",
+      textContent: "",
+      title: "",
+      type: "",
+      style: {},
+      dataset: {},
+      children: [],
+      appendChild(child) {
+        this.children.push(child);
+      },
+      querySelector(selector) {
+        if (selector === ".pepper-store-filter-button-store") {
+          return findButtonByClass(this.children, "pepper-store-filter-button-store");
+        }
+
+        if (selector === ".pepper-store-filter-button-category") {
+          return findButtonByClass(this.children, "pepper-store-filter-button-category");
+        }
+
+        return null;
+      },
+      addEventListener: () => {}
+    };
+  }
+
+  const userHtml = {
+    insertAdjacentElement: (_, element) => {
+      insertedWrapper = element;
+    }
+  };
+  const body = {
+    querySelector: (selector) => {
+      return selector === ".userHtml" ? userHtml : null;
+    },
+    appendChild: (element) => {
+      insertedWrapper = element;
+    }
+  };
+  const card = {
+    id: "thread_1277002",
+    textContent: "Oferta Dostepne w Amazon.pl Dodane przez tester",
+    dataset: {},
+    style: {},
+    appendChild: (element) => {
+      insertedWrapper = element;
+    },
+    querySelector: (selector) => {
+      if (selector === ".pepper-store-filter-wrapper") {
+        return insertedWrapper;
+      }
+
+      if (selector === ".pepper-store-filter-button") {
+        return insertedWrapper?.children?.[0] || null;
+      }
+
+      if (selector === ".threadListCard-body") {
+        return body;
+      }
+
+      if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+        return useStructuredThread ? normalizer : null;
+      }
+
+      return null;
+    },
+    querySelectorAll: () => []
+  };
+  const normalizer = {
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1277002",
+            type: "Deal",
+            merchant: {
+              merchantName: "Amazon.pl"
+            },
+            mainGroup: {
+              threadGroupName: "Gaming",
+              threadGroupUrlName: "gry"
+            }
+          }
+        }
+      }),
+    closest: () => card
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return useStructuredThread ? [normalizer] : [];
+        }
+
+        if (selector === 'article[id^="thread_"], article.thread, [data-t="thread"]') {
+          return [card];
+        }
+
+        return [];
+      },
+      createElement: createTestElement
+    }
+  });
+
+  context.applyFilters();
+  assert.ok(insertedWrapper);
+  assert.equal(insertedWrapper.children.length, 1);
+  assert.equal(
+    insertedWrapper.children[0].className.includes("pepper-store-filter-button-store"),
+    true
+  );
+
+  useStructuredThread = true;
+  context.applyFilters();
+
+  assert.equal(insertedWrapper.children.length, 2);
+  assert.equal(
+    insertedWrapper.children.some((child) =>
+      child.className.includes("pepper-store-filter-button-category")
+    ),
     true
   );
 });
@@ -2511,6 +2927,31 @@ test("observePageChanges watches dynamically loaded offers", () => {
     JSON.stringify(observedOptions.attributeFilter),
     JSON.stringify(["data-vue3", "aria-busy", "class"])
   );
+});
+
+test("observePageChanges starts observing before document.body exists", () => {
+  const documentElement = {
+    appendChild: () => {}
+  };
+  let observedTarget = null;
+
+  loadContentScript({
+    document: {
+      body: null,
+      documentElement,
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: createMockElement,
+      addEventListener: () => {}
+    },
+    MutationObserver: class {
+      observe(target) {
+        observedTarget = target;
+      }
+    }
+  });
+
+  assert.equal(observedTarget, documentElement);
 });
 
 // Verifies scroll-triggered lazy loading is handled even when Pepper appends or
