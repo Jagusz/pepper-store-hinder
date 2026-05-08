@@ -201,6 +201,7 @@ test("normalizeSettings falls back to the legacy shared threshold", () => {
       useFirefoxSync: true,
       alwaysFilterOnPageOpen: true,
       filtersEnabled: true,
+      categoryFiltersEnabled: true,
       showFilteredAsDimmed: false,
       showBelowThresholdAsDimmed: false,
       showFilteredAboveThreshold: true,
@@ -219,6 +220,58 @@ test("mergeStoreLists removes duplicates case-insensitively", () => {
     JSON.stringify(context.mergeStoreLists(["Amazon.pl", "ALDI"], [" amazon.PL ", "Netto"])),
     JSON.stringify(["ALDI", "Amazon.pl", "Netto"])
   );
+});
+
+test("getNormalizerItems reads the visible category from mainGroup", () => {
+  const card = {
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    parentElement: null,
+    textContent: ""
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1275001",
+            type: "Deal",
+            merchant: {
+              merchantName: "Amazon.pl"
+            },
+            mainGroup: {
+              threadGroupName: "Gaming",
+              threadGroupUrlName: "gry"
+            }
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement: createMockElement
+    }
+  });
+
+  const items = context.getNormalizerItems();
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].category.name, "Gaming");
+  assert.equal(items[0].category.slug, "gry");
 });
 
 // Verifies the parser handles both normal JSON and HTML-escaped quotes, because
@@ -291,6 +344,108 @@ test("getNormalizerItems ignores offers without store data", () => {
   context.document.querySelectorAll = () => [normalizer];
 
   assert.equal(JSON.stringify(context.getNormalizerItems()), JSON.stringify([]));
+});
+
+// Verifies cards that already expose Pepper's structured normalizer do not fall
+// back to merchant text before the thread payload is complete, because that can
+// create an early store-only button with no category on the first listings.
+test("getNormalizerItems skips text fallback for cards that already have a Pepper normalizer", () => {
+  const card = {
+    textContent: "Radiohead Dostępne w Amazon.pl Dodane przez gregov",
+    appendChild: () => {},
+    querySelector: (selector) => {
+      if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+        return normalizer;
+      }
+
+      return null;
+    },
+    querySelectorAll: () => [normalizer],
+    getAttribute: () => null
+  };
+  const normalizer = {
+    getAttribute: () => "",
+    closest: () => card
+  };
+  const context = loadContentScript();
+
+  context.document.querySelectorAll = (selector) => {
+    if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+      return [normalizer];
+    }
+
+    if (selector === 'article[id^="thread_"], article.thread, [data-t="thread"]') {
+      return [card];
+    }
+
+    return [];
+  };
+
+  assert.equal(JSON.stringify(context.getNormalizerItems()), JSON.stringify([]));
+});
+
+test("getNormalizerItems reuses cached structured thread data after Pepper removes the normalizer", () => {
+  const card = {
+    id: "thread_1276175",
+    textContent: "Google Pixelsnap Phone Case Dostępne w Amazon.pl Dodane przez zakup_marzeń",
+    appendChild: () => {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    getAttribute: () => null
+  };
+  const normalizer = {
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1276175",
+            type: "Deal",
+            merchant: {
+              merchantName: "Amazon.pl"
+            },
+            mainGroup: {
+              threadGroupName: "Elektronika",
+              threadGroupUrlName: "elektronika"
+            }
+          }
+        }
+      }),
+    closest: () => card
+  };
+  const context = loadContentScript();
+
+  context.document.querySelectorAll = (selector) => {
+    if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+      return [normalizer];
+    }
+
+    if (selector === 'article[id^="thread_"], article.thread, [data-t="thread"]') {
+      return [card];
+    }
+
+    return [];
+  };
+
+  context.warmStructuredThreadCache();
+
+  context.document.querySelectorAll = (selector) => {
+    if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+      return [];
+    }
+
+    if (selector === 'article[id^="thread_"], article.thread, [data-t="thread"]') {
+      return [card];
+    }
+
+    return [];
+  };
+
+  const items = context.getNormalizerItems();
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].merchant.name, "Amazon.pl");
+  assert.equal(items[0].category.name, "Elektronika");
 });
 
 // Verifies real Pepper listings that have merchant:null still get a filter
@@ -744,6 +899,208 @@ test("addFilterButton inserts the button before the offer description", () => {
   assert.equal(insertedPosition, "beforebegin");
   assert.ok(insertedElement);
   assert.equal(insertedElement.className, "pepper-store-filter-wrapper");
+});
+
+test("getNormalizerItems keeps offers that only expose a category", () => {
+  const card = {
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    parentElement: null,
+    textContent: ""
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1275002",
+            type: "Deal",
+            merchant: null,
+            linkHost: "",
+            mainGroup: {
+              threadGroupName: "Dom i mieszkanie",
+              threadGroupUrlName: "dom-i-mieszkanie"
+            }
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement: createMockElement
+    }
+  });
+
+  const items = context.getNormalizerItems();
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].merchant, null);
+  assert.equal(items[0].category.name, "Dom i mieszkanie");
+});
+
+test("addFilterButton includes a category filter button when the offer exposes a category", () => {
+  let insertedElement = null;
+  const userHtml = {
+    insertAdjacentElement: (_, element) => {
+      insertedElement = element;
+    }
+  };
+  const body = {
+    querySelector: (selector) => {
+      return selector === ".userHtml" ? userHtml : null;
+    },
+    appendChild: () => {}
+  };
+  const card = {
+    querySelector: (selector) => {
+      if (selector === ".pepper-store-filter-button-store") {
+        return null;
+      }
+
+      if (selector === ".pepper-store-filter-button-category") {
+        return null;
+      }
+
+      if (selector === ".threadListCard-body") {
+        return body;
+      }
+
+      return null;
+    }
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: (tagName) => ({
+        tagName,
+        className: "",
+        children: [],
+        appendChild(child) {
+          this.children.push(child);
+        },
+        addEventListener: () => {},
+        style: {}
+      })
+    }
+  });
+
+  context.addFilterButton({
+    card,
+    normalizer: {},
+    merchant: {
+      name: "Media Expert"
+    },
+    category: {
+      name: "Gaming",
+      slug: "gry"
+    }
+  });
+
+  assert.ok(insertedElement);
+  assert.equal(insertedElement.className, "pepper-store-filter-wrapper");
+  assert.equal(insertedElement.children.length, 2);
+  assert.equal(insertedElement.children[0].className.includes("pepper-store-filter-button-store"), true);
+  assert.equal(insertedElement.children[1].className.includes("pepper-store-filter-button-category"), true);
+});
+
+test("addFilterButton appends a missing category button into an existing wrapper", () => {
+  const wrapperChildren = [
+    {
+      className: "pepper-store-filter-button pepper-store-filter-button-store"
+    }
+  ];
+  const existingWrapper = {
+    className: "pepper-store-filter-wrapper",
+    children: wrapperChildren,
+    appendChild(child) {
+      this.children.push(child);
+    },
+    querySelector(selector) {
+      return (
+        this.children.find((child) => child.className?.includes(selector.slice(1))) ||
+        null
+      );
+    }
+  };
+  const userHtml = {
+    insertAdjacentElement: () => {}
+  };
+  const body = {
+    querySelector: (selector) => {
+      return selector === ".userHtml" ? userHtml : null;
+    },
+    appendChild: () => {}
+  };
+  const card = {
+    querySelector: (selector) => {
+      if (selector === ".pepper-store-filter-wrapper") {
+        return existingWrapper;
+      }
+
+      if (selector === ".threadListCard-body") {
+        return body;
+      }
+
+      return null;
+    }
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: (tagName) => ({
+        tagName,
+        className: "",
+        children: [],
+        appendChild(child) {
+          this.children.push(child);
+        },
+        addEventListener: () => {},
+        style: {}
+      })
+    }
+  });
+
+  context.addFilterButton({
+    card,
+    normalizer: {},
+    merchant: {
+      name: "Media Expert"
+    },
+    category: {
+      name: "Gaming",
+      slug: "gry"
+    }
+  });
+
+  assert.equal(existingWrapper.children.length, 2);
+  assert.equal(
+    existingWrapper.children[1].className.includes("pepper-store-filter-button-category"),
+    true
+  );
 });
 
 // Verifies clicking the in-page filter button asks for confirmation before
@@ -1376,6 +1733,392 @@ test("refreshStateFromStorage shows filtered stores above the configured thresho
   assert.equal(card.dataset.pepperStoreFilterDimmed, undefined);
 });
 
+test("refreshStateFromStorage keeps category-filtered deals hidden even above the filtered-store threshold", async () => {
+  const card = {
+    appendChild: () => {},
+    classList: {
+      add: () => {},
+      remove: () => {}
+    },
+    dataset: {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    style: {
+      display: ""
+    }
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1274010-category-threshold-conflict",
+            type: "Deal",
+            merchant: {
+              merchantName: "Media Expert"
+            },
+            temperature: 250,
+            mainGroup: {
+              threadGroupName: "Gaming",
+              threadGroupUrlName: "gry"
+            }
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement: createMockElement
+    },
+    browser: {
+      storage: {
+        sync: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenStores")) {
+              return { hiddenStores: ["Media Expert"] };
+            }
+
+            return { hiddenCategories: ["Gaming"] };
+          },
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return {
+                settings: {
+                  useFirefoxSync: true,
+                  alwaysFilterOnPageOpen: true,
+                  filtersEnabled: true,
+                  categoryFiltersEnabled: true,
+                  showFilteredAboveThreshold: true,
+                  showFilteredThreshold: 200
+                }
+              };
+            }
+
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: [] };
+            }
+
+            return { hiddenStores: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: () => {}
+        }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(card.style.display, "none");
+  assert.equal(card.dataset.pepperStoreFilterHidden, "true");
+});
+
+test("refreshStateFromStorage hides deals from filtered categories", async () => {
+  const card = {
+    appendChild: () => {},
+    classList: {
+      add: () => {},
+      remove: () => {}
+    },
+    dataset: {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    style: {
+      display: ""
+    }
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1274010-category",
+            type: "Deal",
+            merchant: {
+              merchantName: "Amazon.pl"
+            },
+            mainGroup: {
+              threadGroupName: "Gaming",
+              threadGroupUrlName: "gry"
+            }
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement: createMockElement
+    },
+    browser: {
+      storage: {
+        sync: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenStores")) {
+              return { hiddenStores: [] };
+            }
+
+            return { hiddenCategories: ["Gaming"] };
+          },
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return {
+                settings: {
+                  useFirefoxSync: true,
+                  alwaysFilterOnPageOpen: true,
+                  filtersEnabled: true,
+                  categoryFiltersEnabled: true
+                }
+              };
+            }
+
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: [] };
+            }
+
+            return { hiddenStores: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: () => {}
+        }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(card.style.display, "none");
+  assert.equal(card.dataset.pepperStoreFilterHidden, "true");
+});
+
+test("refreshStateFromStorage ignores filtered categories when category filters are disabled", async () => {
+  const card = {
+    appendChild: () => {},
+    classList: {
+      add: () => {},
+      remove: () => {}
+    },
+    dataset: {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    style: {
+      display: ""
+    }
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1274010-category-off",
+            type: "Deal",
+            merchant: {
+              merchantName: "Amazon.pl"
+            },
+            mainGroup: {
+              threadGroupName: "Gaming",
+              threadGroupUrlName: "gry"
+            }
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement: createMockElement
+    },
+    browser: {
+      storage: {
+        sync: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenStores")) {
+              return { hiddenStores: [] };
+            }
+
+            return { hiddenCategories: ["Gaming"] };
+          },
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return {
+                settings: {
+                  useFirefoxSync: true,
+                  alwaysFilterOnPageOpen: true,
+                  filtersEnabled: true,
+                  categoryFiltersEnabled: false
+                }
+              };
+            }
+
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: [] };
+            }
+
+            return { hiddenStores: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: () => {}
+        }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(card.style.display, "");
+  assert.equal(card.dataset.pepperStoreFilterHidden, undefined);
+});
+
+test("refreshStateFromStorage hides category-filtered deals even when merchant data is missing", async () => {
+  const card = {
+    appendChild: () => {},
+    classList: {
+      add: () => {},
+      remove: () => {}
+    },
+    dataset: {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    style: {
+      display: ""
+    }
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1274010-category-no-merchant",
+            type: "Deal",
+            merchant: null,
+            linkHost: "",
+            mainGroup: {
+              threadGroupName: "Gaming",
+              threadGroupUrlName: "gry"
+            }
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement: createMockElement
+    },
+    browser: {
+      storage: {
+        sync: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenStores")) {
+              return { hiddenStores: [] };
+            }
+
+            return { hiddenCategories: ["Gaming"] };
+          },
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return {
+                settings: {
+                  useFirefoxSync: true,
+                  alwaysFilterOnPageOpen: true,
+                  filtersEnabled: true,
+                  categoryFiltersEnabled: true
+                }
+              };
+            }
+
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: [] };
+            }
+
+            return { hiddenStores: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: () => {}
+        }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(card.style.display, "none");
+  assert.equal(card.dataset.pepperStoreFilterHidden, "true");
+});
+
 // Verifies deals can be hidden globally when their temperature drops below the
 // configured threshold, regardless of merchant filtering.
 test("refreshStateFromStorage hides deals below the configured threshold", async () => {
@@ -1763,6 +2506,11 @@ test("observePageChanges watches dynamically loaded offers", () => {
   assert.ok(observedTarget);
   assert.equal(observedOptions.childList, true);
   assert.equal(observedOptions.subtree, true);
+  assert.equal(observedOptions.attributes, true);
+  assert.equal(
+    JSON.stringify(observedOptions.attributeFilter),
+    JSON.stringify(["data-vue3", "aria-busy", "class"])
+  );
 });
 
 // Verifies scroll-triggered lazy loading is handled even when Pepper appends or

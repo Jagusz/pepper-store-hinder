@@ -26,10 +26,13 @@ The current version works on Pepper.pl. This extension is not created, supported
 - Works on deal listings and individual deal pages.
 - Reads the store from `data-vue3` data when the supported website exposes it in the deal component.
 - Uses `props.thread.merchant.merchantName` as the primary store name.
+- Reads the Pepper category from `props.thread.mainGroup.threadGroupName`.
 - When `merchant` is empty, uses `props.thread.linkHost`, for example `www.facebook.com` -> `facebook.com`.
 - When structured data is unavailable, tries to read the store from visible deal text, including labels such as `Dostępne w` and `Zrealizuj na`.
 - Ignores `Discussion` entries.
 - The popup lets you manually add, remove, and clear stores.
+- The popup uses separate `Shops` and `Category` tabs, so store and category filters stay organized.
+- The extension can also filter deals by Pepper category read from `props.thread.mainGroup.threadGroupName`.
 
 ## How It Works
 
@@ -37,6 +40,7 @@ On deal listings, the extension first reads data embedded by the supported websi
 
 ```text
 props.thread.merchant.merchantName
+props.thread.mainGroup.threadGroupName
 ```
 
 If a deal has no assigned `merchant`, the extension tries to use the link host:
@@ -53,6 +57,8 @@ Zrealizuj na Store name
 ```
 
 The text fallback also cleans appended website labels, CTA button text, and voucher codes, so the filter button does not receive names like `FlaconiSPRINGTIMEPobierz kod`.
+
+On Pepper's `/nowe` listing, the first cards may be re-rendered by the frontend shortly after the initial HTML is painted. To avoid losing the category or store name, the extension stores structured deal data from `ThreadMainListItemNormalizer` in an internal cache and can reuse it later even if Pepper removes or replaces the normalizer in the DOM.
 
 When a store can be detected, the extension adds this button next to the deal:
 
@@ -94,6 +100,7 @@ The popup has a settings view opened with the gear button.
 
 - `Firefox Sync` - stores the filter list in `browser.storage.sync` and keeps a local fallback copy. When disabled, the list is stored only locally on the current device.
 - `Always filter when opening a page` - automatically turns filtering back on when a supported page opens, even if filtering was temporarily disabled earlier.
+- `Enable category filters` - turns category filtering on or off without clearing the saved category list.
 - `Show filtered deals as compact previews` - keeps matching deals in the listing as compact previews instead of hiding them completely.
 - `Show filtered deals above this threshold` - shows deals from filtered stores when their temperature is equal to or higher than the configured threshold.
 - `Show filtered deals threshold` - sets the temperature threshold for showing deals from filtered stores.
@@ -202,12 +209,15 @@ The tests cover, among other things:
 - fallback to local storage,
 - parsing `data-vue3` data,
 - finding `props.thread`,
+- reading the category from `mainGroup`,
 - fallback to `linkHost` when `merchant` is empty,
 - fallback to rendered deal text,
 - handling `Dostępne w` and `Zrealizuj na` labels,
 - cleaning appended labels, voucher codes, and CTA text from store names,
 - ignoring offers where no store name can be detected,
 - ignoring `Discussion` entries,
+- skipping premature text fallback for cards that already expose a Pepper normalizer,
+- reusing cached `ThreadMainListItemNormalizer` data after Pepper removes the normalizer from the first cards,
 - manifest declarations required for publishing.
 
 The same tests run in GitHub Actions.

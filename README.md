@@ -26,10 +26,13 @@ Obecna wersja działa na Pepper.pl. Rozszerzenie nie jest tworzone, wspierane an
 - Działa na listach ofert oraz na stronach pojedynczych okazji.
 - Odczytuje sklep z danych `data-vue3`, jeśli obsługiwana strona udostępnia je w komponencie oferty.
 - Używa `props.thread.merchant.merchantName` jako głównej nazwy sklepu.
+- Odczytuje kategorię Peppera z `props.thread.mainGroup.threadGroupName`.
 - Gdy `merchant` jest pusty, używa `props.thread.linkHost`, np. `www.facebook.com` -> `facebook.com`.
 - Gdy dane strukturalne nie są dostępne, próbuje odczytać sklep z widocznego tekstu oferty, m.in. z etykiet `Dostępne w` i `Zrealizuj na`.
 - Ignoruje wpisy typu `Discussion`.
 - Popup pozwala ręcznie dodawać, usuwać i czyścić listę sklepów.
+- Popup ma osobne zakładki `Shops` i `Category`, dzięki czemu listy filtrów sklepów i kategorii są rozdzielone.
+- Rozszerzenie potrafi filtrować oferty także po kategorii Peppera odczytanej z `props.thread.mainGroup.threadGroupName`.
 
 ## Jak działa
 
@@ -37,6 +40,7 @@ Na listach ofert rozszerzenie najpierw odczytuje dane osadzone przez obsługiwan
 
 ```text
 props.thread.merchant.merchantName
+props.thread.mainGroup.threadGroupName
 ```
 
 Jeśli oferta nie ma przypisanego `merchant`, rozszerzenie próbuje użyć hosta linku:
@@ -53,6 +57,8 @@ Zrealizuj na Nazwa sklepu
 ```
 
 Fallback tekstowy czyści też doklejone etykiety strony, przyciski CTA i kody kuponów, aby przycisk nie dostał nazwy w stylu `FlaconiSPRINGTIMEPobierz kod`.
+
+Na listach `Pepper /nowe` pierwsze karty bywają przebudowywane przez frontend już po początkowym wyrenderowaniu. Żeby nie zgubić kategorii lub nazwy sklepu, rozszerzenie zapisuje ustrukturyzowane dane oferty z `ThreadMainListItemNormalizer` do wewnętrznego cache i może użyć ich ponownie, nawet jeśli Pepper później usunie albo podmieni sam normalizer w DOM.
 
 Jeśli uda się ustalić sklep, rozszerzenie dodaje przy ofercie przycisk:
 
@@ -95,6 +101,7 @@ Popup ma widok ustawień otwierany ikoną koła zębatego.
 - `Firefox Sync` - zapisuje listę filtrów w `browser.storage.sync` i utrzymuje lokalną kopię awaryjną. Po wyłączeniu lista jest zapisywana tylko lokalnie na bieżącym urządzeniu.
 - `Always filter when opening a page` - po otwarciu obsługiwanej strony automatycznie włącza filtrowanie, nawet jeśli wcześniej zostało tymczasowo wyłączone.
 - `Show filtered deals as compact previews` - zamiast ukrywać pasujące oferty, zostawia je na liście jako kompaktowy podgląd.
+- `Enable category filters` - włącza albo wyłącza filtrowanie po zapisanych kategoriach bez usuwania listy kategorii.
 - `Show filtered deals above this threshold` - pokazuje oferty z filtrowanych sklepów, jeśli ich temperatura jest równa ustawionemu progowi albo go przekracza.
 - `Show filtered deals threshold` - ustawia próg temperatury dla pokazywania ofert z filtrowanych sklepów.
 - `Hide deals below this threshold` - ukrywa oferty, jeśli ich temperatura spada poniżej ustawionego progu.
@@ -202,12 +209,15 @@ Testy sprawdzają między innymi:
 - fallback do local storage,
 - parsowanie danych `data-vue3`,
 - wyszukiwanie `props.thread`,
+- odczyt kategorii z `mainGroup`,
 - fallback do `linkHost`, gdy `merchant` jest pusty,
 - fallback do tekstu wyrenderowanej oferty,
 - obsługę etykiet `Dostępne w` i `Zrealizuj na`,
 - czyszczenie doklejonych etykiet, kodów kuponów i CTA z nazwy sklepu,
 - ignorowanie ofert bez możliwej do ustalenia nazwy sklepu,
 - ignorowanie wpisów typu `Discussion`,
+- pomijanie przedwczesnego fallbacku tekstowego dla kart, które mają już normalizer Peppera,
+- ponowne użycie zcache'owanych danych `ThreadMainListItemNormalizer`, gdy Pepper usunie normalizer z pierwszych kart,
 - deklaracje manifestu wymagane do publikacji.
 
 Te same testy są uruchamiane w GitHub Actions.
