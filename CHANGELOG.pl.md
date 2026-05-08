@@ -1,5 +1,13 @@
 # Lista zmian
 
+## Unreleased
+
+### Zmieniono
+
+- Dodano cache ustrukturyzowanych danych oferty z list Peppera, dzięki czemu rozszerzenie może zachować sklep i kategorię także po przebudowie pierwszych kart na `/nowe`.
+- Uszczelniono parser listy ofert, żeby nie wpadał zbyt wcześnie w tekstowy fallback na kartach, które mają już `ThreadMainListItemNormalizer`, ale nie skończyły jeszcze hydratacji.
+- Rozszerzono testy o odczyt kategorii Peppera, oferty z samą kategorią, uzupełnianie brakującego przycisku oraz ponowne użycie zcache'owanych danych po zmianach DOM.
+
 ## 0.2.0
 
 Wydanie skupione na tym, żeby filtrowanie było łatwiejsze do kontrolowania bez utraty zapisanej listy sklepów.

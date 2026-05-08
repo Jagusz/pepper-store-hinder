@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Added a structured thread-data cache for Pepper listing cards so the extension can keep the store and category after the page re-renders the first deals on `/nowe`.
+- Tightened the listing parser to avoid using an early text-only fallback on cards that already expose `ThreadMainListItemNormalizer` but have not finished hydrating yet.
+- Expanded tests to cover Pepper category parsing, category-only deals, partial button recovery, and cached normalizer reuse after DOM updates.
+
 ## 0.2.0
 
 Release focused on making filtering easier to control without losing the saved store list.
