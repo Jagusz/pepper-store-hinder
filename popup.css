@@ -156,6 +156,30 @@ header span {
   overflow-wrap: anywhere;
 }
 
+.filter-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tab-button {
+  width: 100%;
+  padding: 8px 10px;
+  border-color: var(--pepper-border);
+  color: var(--pepper-text);
+  background: var(--pepper-surface);
+  box-shadow: none;
+}
+
+.tab-button.is-active,
+.tab-button:hover:not(:disabled),
+.tab-button:focus-visible {
+  color: #fff;
+  border-color: var(--pepper-orange-dark);
+  background: var(--pepper-orange);
+}
+
 form {
   padding: 12px;
   border: 1px solid var(--pepper-border);
@@ -233,6 +257,10 @@ button:disabled {
 
 .filter-toggle {
   margin-top: 12px;
+}
+
+#clear-filters {
+  margin-top: 10px;
 }
 
 .filter-toggle.is-off {

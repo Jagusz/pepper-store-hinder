@@ -1,9 +1,11 @@
 const STORAGE_KEY = "hiddenStores";
+const CATEGORY_STORAGE_KEY = "hiddenCategories";
 const SETTINGS_KEY = "settings";
 const DEFAULT_SETTINGS = {
   useFirefoxSync: true,
   alwaysFilterOnPageOpen: true,
   filtersEnabled: true,
+  categoryFiltersEnabled: true,
   showFilteredAsDimmed: false,
   showBelowThresholdAsDimmed: false,
   showFilteredAboveThreshold: false,
@@ -14,16 +16,23 @@ const DEFAULT_SETTINGS = {
 
 const form = document.querySelector("#store-form");
 const input = document.querySelector("#store-name");
+const inputLabel = document.querySelector("#filter-input-label");
+const addFilterButton = document.querySelector("#add-filter-button");
 const list = document.querySelector("#store-list");
-const clearButton = document.querySelector("#clear-stores");
+const clearButton = document.querySelector("#clear-filters");
 const statusText = document.querySelector("#storage-status");
 const filterToggleButton = document.querySelector("#toggle-filters");
+const shopsTabButton = document.querySelector("#tab-shops");
+const categoriesTabButton = document.querySelector("#tab-categories");
 const mainView = document.querySelector("#main-view");
 const settingsToggle = document.querySelector("#settings-toggle");
 const settingsBack = document.querySelector("#settings-back");
 const settingsView = document.querySelector("#settings-view");
 const syncCheckbox = document.querySelector("#use-firefox-sync");
 const alwaysFilterCheckbox = document.querySelector("#always-filter-on-open");
+const categoryFiltersEnabledCheckbox = document.querySelector(
+  "#category-filters-enabled"
+);
 const dimmedCheckbox = document.querySelector("#show-filtered-as-dimmed");
 const showBelowThresholdAsDimmedCheckbox = document.querySelector(
   "#show-below-threshold-as-dimmed"
@@ -42,6 +51,7 @@ const hideUnfilteredThresholdInput = document.querySelector(
 );
 let latestSettings = { ...DEFAULT_SETTINGS };
 let settingsSaveQueue = Promise.resolve();
+let activeFilterTab = "shops";
 
 function normalizeText(value) {
   return String(value || "")
@@ -83,6 +93,7 @@ function normalizeSettings(value) {
     useFirefoxSync: value?.useFirefoxSync !== false,
     alwaysFilterOnPageOpen: value?.alwaysFilterOnPageOpen !== false,
     filtersEnabled: value?.filtersEnabled !== false,
+    categoryFiltersEnabled: value?.categoryFiltersEnabled !== false,
     showFilteredAsDimmed: value?.showFilteredAsDimmed === true,
     showBelowThresholdAsDimmed: value?.showBelowThresholdAsDimmed === true,
     showFilteredAboveThreshold: value?.showFilteredAboveThreshold === true,
@@ -113,6 +124,7 @@ function updateSettingsUi(settings) {
   latestSettings = settings;
   syncCheckbox.checked = settings.useFirefoxSync;
   alwaysFilterCheckbox.checked = settings.alwaysFilterOnPageOpen;
+  categoryFiltersEnabledCheckbox.checked = settings.categoryFiltersEnabled;
   dimmedCheckbox.checked = settings.showFilteredAsDimmed;
   showBelowThresholdAsDimmedCheckbox.checked = settings.showBelowThresholdAsDimmed;
   showFilteredAboveThresholdCheckbox.checked = settings.showFilteredAboveThreshold;
@@ -129,11 +141,50 @@ function updateSettingsUi(settings) {
   );
 }
 
+function getActiveFilterConfig() {
+  if (activeFilterTab === "categories") {
+    return {
+      storageKey: CATEGORY_STORAGE_KEY,
+      label: "Category to hide",
+      placeholder: "Gaming",
+      emptyMessage: "No hidden categories.",
+      clearLabel: "Clear categories",
+      confirmClearMessage: "Do you want to clear the hidden category list?",
+      addPromptPrefix: "category"
+    };
+  }
+
+  return {
+    storageKey: STORAGE_KEY,
+    label: "Store to hide",
+    placeholder: "Amazon.pl",
+    emptyMessage: "No hidden stores.",
+    clearLabel: "Clear shops",
+    confirmClearMessage: "Do you want to clear the hidden store list?",
+    addPromptPrefix: "store"
+  };
+}
+
+function updateActiveTabUi() {
+  const config = getActiveFilterConfig();
+  const isShopsTab = activeFilterTab === "shops";
+
+  shopsTabButton.classList.toggle("is-active", isShopsTab);
+  shopsTabButton.setAttribute("aria-selected", String(isShopsTab));
+  categoriesTabButton.classList.toggle("is-active", !isShopsTab);
+  categoriesTabButton.setAttribute("aria-selected", String(!isShopsTab));
+  inputLabel.textContent = config.label;
+  input.placeholder = config.placeholder;
+  addFilterButton.textContent = "Add";
+  clearButton.textContent = config.clearLabel;
+}
+
 function collectSettingsFromUi(baseSettings = latestSettings) {
   return {
     ...baseSettings,
     useFirefoxSync: syncCheckbox.checked,
     alwaysFilterOnPageOpen: alwaysFilterCheckbox.checked,
+    categoryFiltersEnabled: categoryFiltersEnabledCheckbox.checked,
     showFilteredAsDimmed: dimmedCheckbox.checked,
     showBelowThresholdAsDimmed: showBelowThresholdAsDimmedCheckbox.checked,
     showFilteredAboveThreshold: showFilteredAboveThresholdCheckbox.checked,
@@ -145,7 +196,7 @@ function collectSettingsFromUi(baseSettings = latestSettings) {
 
 async function applySavedSettings(settings) {
   updateSettingsUi(settings);
-  renderStores(await getHiddenStores(settings));
+  await renderActiveList(settings);
   await refreshActiveTabFilters();
   return settings;
 }
@@ -262,54 +313,65 @@ async function updateLocalCache(stores) {
   }
 }
 
-async function getHiddenStores(settings) {
+async function updateLocalCacheForKey(storageKey, values) {
+  const normalizedValues = mergeStoreLists(values);
+  const localResult = await browser.storage.local.get({ [storageKey]: [] });
+  const localValues = mergeStoreLists(localResult[storageKey]);
+
+  if (JSON.stringify(localValues) !== JSON.stringify(normalizedValues)) {
+    await browser.storage.local.set({ [storageKey]: normalizedValues });
+  }
+}
+
+async function getHiddenValues(storageKey, settings) {
   if (settings.useFirefoxSync && browser.storage.sync) {
     try {
-      const syncResult = await browser.storage.sync.get({ [STORAGE_KEY]: [] });
-      const syncedStores = mergeStoreLists(syncResult[STORAGE_KEY]);
+      const syncResult = await browser.storage.sync.get({ [storageKey]: [] });
+      const syncedValues = mergeStoreLists(syncResult[storageKey]);
 
-      await updateLocalCache(syncedStores);
+      await updateLocalCacheForKey(storageKey, syncedValues);
       updateStorageStatus(true, settings);
-      return syncedStores;
+      return syncedValues;
     } catch (error) {
       console.warn("[Deal Store Filter] Firefox Sync unavailable", error);
     }
   }
 
-  const localResult = await browser.storage.local.get({ [STORAGE_KEY]: [] });
+  const localResult = await browser.storage.local.get({ [storageKey]: [] });
   updateStorageStatus(false, settings);
 
-  return mergeStoreLists(localResult[STORAGE_KEY]);
+  return mergeStoreLists(localResult[storageKey]);
 }
 
-async function saveHiddenStores(hiddenStores, settings) {
-  const normalizedStores = mergeStoreLists(hiddenStores);
+async function saveHiddenValues(storageKey, values, settings) {
+  const normalizedValues = mergeStoreLists(values);
   let syncAvailable = false;
 
   if (settings.useFirefoxSync && browser.storage.sync) {
     try {
-      await browser.storage.sync.set({ [STORAGE_KEY]: normalizedStores });
+      await browser.storage.sync.set({ [storageKey]: normalizedValues });
       syncAvailable = true;
     } catch (error) {
       console.warn("[Deal Store Filter] Firefox Sync unavailable", error);
     }
   }
 
-  await browser.storage.local.set({ [STORAGE_KEY]: normalizedStores });
+  await browser.storage.local.set({ [storageKey]: normalizedValues });
   updateStorageStatus(syncAvailable, settings);
   await refreshActiveTabFilters();
 
-  return normalizedStores;
+  return normalizedValues;
 }
 
 function renderStores(hiddenStores) {
+  const config = getActiveFilterConfig();
   list.replaceChildren();
   clearButton.disabled = hiddenStores.length === 0;
 
   if (hiddenStores.length === 0) {
     const item = document.createElement("li");
     item.className = "empty";
-    item.textContent = "No hidden stores.";
+    item.textContent = config.emptyMessage;
     list.append(item);
     return;
   }
@@ -325,7 +387,7 @@ function renderStores(hiddenStores) {
     removeButton.addEventListener("click", async () => {
       const nextStores = hiddenStores.filter((_, itemIndex) => itemIndex !== index);
       const settings = await getSettings();
-      renderStores(await saveHiddenStores(nextStores, settings));
+      renderStores(await saveHiddenValues(config.storageKey, nextStores, settings));
     });
 
     item.append(name, removeButton);
@@ -333,10 +395,19 @@ function renderStores(hiddenStores) {
   });
 }
 
+async function renderActiveList(settings = null) {
+  const activeSettings = settings || await getSettings();
+  const config = getActiveFilterConfig();
+
+  updateActiveTabUi();
+  renderStores(await getHiddenValues(config.storageKey, activeSettings));
+}
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const cleanedStore = normalizeStoreName(input.value);
+  const config = getActiveFilterConfig();
 
   if (!cleanedStore) {
     return;
@@ -344,7 +415,7 @@ form.addEventListener("submit", async (event) => {
 
   try {
     const settings = await getSettings();
-    const hiddenStores = await getHiddenStores(settings);
+    const hiddenStores = await getHiddenValues(config.storageKey, settings);
     const alreadyExists = hiddenStores.some((store) => {
       return normalizeText(store) === normalizeText(cleanedStore);
     });
@@ -353,7 +424,7 @@ form.addEventListener("submit", async (event) => {
       ? hiddenStores
       : [...hiddenStores, cleanedStore];
 
-    renderStores(await saveHiddenStores(nextStores, settings));
+    renderStores(await saveHiddenValues(config.storageKey, nextStores, settings));
     input.value = "";
   } catch (error) {
     console.error("[Deal Store Filter] Failed to save filter", error);
@@ -362,8 +433,9 @@ form.addEventListener("submit", async (event) => {
 });
 
 clearButton.addEventListener("click", async () => {
+  const config = getActiveFilterConfig();
   const shouldClearStores = window.confirm(
-    "Do you want to clear the hidden store list?"
+    config.confirmClearMessage
   );
 
   if (!shouldClearStores) {
@@ -372,7 +444,7 @@ clearButton.addEventListener("click", async () => {
 
   const settings = await getSettings();
 
-  renderStores(await saveHiddenStores([], settings));
+  renderStores(await saveHiddenValues(config.storageKey, [], settings));
 });
 
 settingsToggle.addEventListener("click", showSettingsView);
@@ -386,6 +458,12 @@ syncCheckbox.addEventListener("change", async () => {
 });
 
 alwaysFilterCheckbox.addEventListener("change", async () => {
+  await queueSettingsSave((currentSettings) => {
+    return collectSettingsFromUi(currentSettings);
+  });
+});
+
+categoryFiltersEnabledCheckbox.addEventListener("change", async () => {
   await queueSettingsSave((currentSettings) => {
     return collectSettingsFromUi(currentSettings);
   });
@@ -438,16 +516,27 @@ filterToggleButton.addEventListener("click", async () => {
   }));
 });
 
+shopsTabButton.addEventListener("click", async () => {
+  activeFilterTab = "shops";
+  await renderActiveList();
+});
+
+categoriesTabButton.addEventListener("click", async () => {
+  activeFilterTab = "categories";
+  await renderActiveList();
+});
+
 async function refreshPopup() {
   const settings = await getSettings();
 
   updateSettingsUi(settings);
-  renderStores(await getHiddenStores(settings));
+  await renderActiveList(settings);
 }
 
 browser.storage.onChanged.addListener((changes, areaName) => {
   const storageChanged =
-    ["sync", "local"].includes(areaName) && Boolean(changes[STORAGE_KEY]);
+    ["sync", "local"].includes(areaName) &&
+    (Boolean(changes[STORAGE_KEY]) || Boolean(changes[CATEGORY_STORAGE_KEY]));
   const settingsChanged = areaName === "local" && Boolean(changes[SETTINGS_KEY]);
 
   if (!storageChanged && !settingsChanged) {
