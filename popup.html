@@ -23,16 +23,34 @@
           >&#9881;</button>
         </header>
 
+        <div class="filter-tabs" role="tablist" aria-label="Filter type">
+          <button
+            id="tab-shops"
+            class="tab-button is-active"
+            type="button"
+            role="tab"
+            aria-selected="true"
+          >Shops</button>
+          <button
+            id="tab-categories"
+            class="tab-button"
+            type="button"
+            role="tab"
+            aria-selected="false"
+          >Category</button>
+        </div>
+
         <form id="store-form">
-          <label for="store-name">Store to hide</label>
+          <label id="filter-input-label" for="store-name">Store to hide</label>
           <div class="input-row">
-            <input id="store-name" name="store-name" type="text" autocomplete="off" required>
-            <button type="submit">Add</button>
+            <input id="store-name" name="store-name" type="text" autocomplete="off" required placeholder="Amazon.pl">
+            <button id="add-filter-button" type="submit">Add</button>
           </div>
         </form>
 
         <p id="storage-status" class="status" role="status"></p>
         <ul id="store-list"></ul>
+        <button id="clear-filters" class="secondary danger" type="button">Clear shops</button>
         <button id="toggle-filters" class="secondary filter-toggle" type="button"></button>
       </section>
 
@@ -55,6 +73,10 @@
           <label class="checkbox-row" for="always-filter-on-open">
             <input id="always-filter-on-open" type="checkbox">
             <span>Always filter when opening a page</span>
+          </label>
+          <label class="checkbox-row" for="category-filters-enabled">
+            <input id="category-filters-enabled" type="checkbox">
+            <span>Enable category filters</span>
           </label>
           <label class="checkbox-row" for="show-filtered-as-dimmed">
             <input id="show-filtered-as-dimmed" type="checkbox">
@@ -99,7 +121,6 @@
             </label>
           </div>
         </div>
-        <button id="clear-stores" class="secondary danger" type="button">Clear list</button>
       </section>
     </main>
 
