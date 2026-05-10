@@ -7,6 +7,7 @@ $manifestPath = Join-Path $root "manifest.json"
 $files = @(
   "manifest.json",
   "content.js",
+  "i18n.js",
   "popup.html",
   "popup.js",
   "popup.css",

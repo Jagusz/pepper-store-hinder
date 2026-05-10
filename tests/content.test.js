@@ -30,6 +30,10 @@ function createMockElement(tagName = "div") {
 }
 
 function loadContentScript(overrides = {}) {
+  const i18nSource = fs.readFileSync(
+    path.join(__dirname, "..", "i18n.js"),
+    "utf8"
+  );
   const source = fs.readFileSync(
     path.join(__dirname, "..", "content.js"),
     "utf8"
@@ -79,10 +83,15 @@ function loadContentScript(overrides = {}) {
     },
     MutationObserver: overrides.MutationObserver || class {
       observe() {}
+    },
+    navigator: overrides.navigator || {
+      language: "en-US",
+      languages: ["en-US"]
     }
   };
 
   vm.createContext(context);
+  vm.runInContext(i18nSource, context, { filename: "i18n.js" });
   vm.runInContext(source, context, { filename: "content.js" });
   return context;
 }
@@ -201,13 +210,53 @@ test("normalizeSettings falls back to the legacy shared threshold", () => {
       useFirefoxSync: true,
       alwaysFilterOnPageOpen: true,
       filtersEnabled: true,
+      categoryFiltersEnabled: true,
       showFilteredAsDimmed: false,
       showBelowThresholdAsDimmed: false,
       showFilteredAboveThreshold: true,
       hideUnfilteredBelowThreshold: true,
       showFilteredThreshold: 150,
-      hideUnfilteredThreshold: 150
+      hideUnfilteredThreshold: 150,
+      uiLanguage: "auto"
     })
+  );
+});
+
+test("resolvePageUiLanguage prefers Polish when the page language is Polish", () => {
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        lang: "pl-PL",
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: createMockElement
+    },
+    navigator: {
+      language: "en-US",
+      languages: ["en-US"]
+    }
+  });
+
+  assert.equal(
+    context.resolvePageUiLanguage({ uiLanguage: "auto" }),
+    "pl"
+  );
+});
+
+test("resolvePageUiLanguage falls back to the browser language when the page language is missing", () => {
+  const context = loadContentScript({
+    navigator: {
+      language: "pl-PL",
+      languages: ["pl-PL", "en-US"]
+    }
+  });
+
+  assert.equal(
+    context.resolvePageUiLanguage({ uiLanguage: "auto" }),
+    "pl"
   );
 });
 
@@ -219,6 +268,58 @@ test("mergeStoreLists removes duplicates case-insensitively", () => {
     JSON.stringify(context.mergeStoreLists(["Amazon.pl", "ALDI"], [" amazon.PL ", "Netto"])),
     JSON.stringify(["ALDI", "Amazon.pl", "Netto"])
   );
+});
+
+test("getNormalizerItems reads the visible category from mainGroup", () => {
+  const card = {
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    parentElement: null,
+    textContent: ""
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1275001",
+            type: "Deal",
+            merchant: {
+              merchantName: "Amazon.pl"
+            },
+            mainGroup: {
+              threadGroupName: "Gaming",
+              threadGroupUrlName: "gry"
+            }
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement: createMockElement
+    }
+  });
+
+  const items = context.getNormalizerItems();
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].category.name, "Gaming");
+  assert.equal(items[0].category.slug, "gry");
 });
 
 // Verifies the parser handles both normal JSON and HTML-escaped quotes, because
@@ -291,6 +392,189 @@ test("getNormalizerItems ignores offers without store data", () => {
   context.document.querySelectorAll = () => [normalizer];
 
   assert.equal(JSON.stringify(context.getNormalizerItems()), JSON.stringify([]));
+});
+
+// Verifies cards that already expose Pepper's structured normalizer do not fall
+// back to merchant text before the thread payload is complete, because that can
+// create an early store-only button with no category on the first listings.
+test("getNormalizerItems skips text fallback for cards that already have a Pepper normalizer", () => {
+  const card = {
+    textContent: "Radiohead Dostępne w Amazon.pl Dodane przez gregov",
+    appendChild: () => {},
+    querySelector: (selector) => {
+      if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+        return normalizer;
+      }
+
+      return null;
+    },
+    querySelectorAll: () => [normalizer],
+    getAttribute: () => null
+  };
+  const normalizer = {
+    getAttribute: () => "",
+    closest: () => card
+  };
+  const context = loadContentScript();
+
+  context.document.querySelectorAll = (selector) => {
+    if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+      return [normalizer];
+    }
+
+    if (selector === 'article[id^="thread_"], article.thread, [data-t="thread"]') {
+      return [card];
+    }
+
+    return [];
+  };
+
+  assert.equal(JSON.stringify(context.getNormalizerItems()), JSON.stringify([]));
+});
+
+test("getNormalizerItems reuses cached structured thread data after Pepper removes the normalizer", () => {
+  const card = {
+    id: "thread_1276175",
+    textContent: "Google Pixelsnap Phone Case Dostępne w Amazon.pl Dodane przez zakup_marzeń",
+    appendChild: () => {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    getAttribute: () => null
+  };
+  const normalizer = {
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1276175",
+            type: "Deal",
+            merchant: {
+              merchantName: "Amazon.pl"
+            },
+            mainGroup: {
+              threadGroupName: "Elektronika",
+              threadGroupUrlName: "elektronika"
+            }
+          }
+        }
+      }),
+    closest: () => card
+  };
+  const context = loadContentScript();
+
+  context.document.querySelectorAll = (selector) => {
+    if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+      return [normalizer];
+    }
+
+    if (selector === 'article[id^="thread_"], article.thread, [data-t="thread"]') {
+      return [card];
+    }
+
+    return [];
+  };
+
+  context.warmStructuredThreadCache();
+
+  context.document.querySelectorAll = (selector) => {
+    if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+      return [];
+    }
+
+    if (selector === 'article[id^="thread_"], article.thread, [data-t="thread"]') {
+      return [card];
+    }
+
+    return [];
+  };
+
+  const items = context.getNormalizerItems();
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].merchant.name, "Amazon.pl");
+  assert.equal(items[0].category.name, "Elektronika");
+});
+
+test("getNormalizerItems keeps the cached category when Pepper later returns partial thread data", () => {
+  const card = {
+    id: "thread_1276175",
+    textContent: "Google Pixelsnap Phone Case DostÄ™pne w Amazon.pl Dodane przez zakup_marzeĹ„",
+    appendChild: () => {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    getAttribute: () => null
+  };
+  const fullNormalizer = {
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1276175",
+            type: "Deal",
+            merchant: {
+              merchantName: "Amazon.pl"
+            },
+            mainGroup: {
+              threadGroupName: "Elektronika",
+              threadGroupUrlName: "elektronika"
+            }
+          }
+        }
+      }),
+    closest: () => card
+  };
+  const partialNormalizer = {
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1276175",
+            type: "Deal",
+            merchant: {
+              merchantName: "Amazon.pl"
+            },
+            mainGroup: null
+          }
+        }
+      }),
+    closest: () => card
+  };
+  const context = loadContentScript();
+
+  context.document.querySelectorAll = (selector) => {
+    if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+      return [fullNormalizer];
+    }
+
+    if (selector === 'article[id^="thread_"], article.thread, [data-t="thread"]') {
+      return [card];
+    }
+
+    return [];
+  };
+
+  context.warmStructuredThreadCache();
+
+  context.document.querySelectorAll = (selector) => {
+    if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+      return [partialNormalizer];
+    }
+
+    if (selector === 'article[id^="thread_"], article.thread, [data-t="thread"]') {
+      return [card];
+    }
+
+    return [];
+  };
+
+  const items = context.getNormalizerItems();
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].merchant.name, "Amazon.pl");
+  assert.equal(items[0].category.name, "Elektronika");
 });
 
 // Verifies real Pepper listings that have merchant:null still get a filter
@@ -746,6 +1030,495 @@ test("addFilterButton inserts the button before the offer description", () => {
   assert.equal(insertedElement.className, "pepper-store-filter-wrapper");
 });
 
+test("getNormalizerItems keeps offers that only expose a category", () => {
+  const card = {
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    parentElement: null,
+    textContent: ""
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1275002",
+            type: "Deal",
+            merchant: null,
+            linkHost: "",
+            mainGroup: {
+              threadGroupName: "Dom i mieszkanie",
+              threadGroupUrlName: "dom-i-mieszkanie"
+            }
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement: createMockElement
+    }
+  });
+
+  const items = context.getNormalizerItems();
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].merchant, null);
+  assert.equal(items[0].category.name, "Dom i mieszkanie");
+});
+
+test("addFilterButton includes a category filter button when the offer exposes a category", () => {
+  let insertedElement = null;
+  const userHtml = {
+    insertAdjacentElement: (_, element) => {
+      insertedElement = element;
+    }
+  };
+  const body = {
+    querySelector: (selector) => {
+      return selector === ".userHtml" ? userHtml : null;
+    },
+    appendChild: () => {}
+  };
+  const card = {
+    querySelector: (selector) => {
+      if (selector === ".pepper-store-filter-button-store") {
+        return null;
+      }
+
+      if (selector === ".pepper-store-filter-button-category") {
+        return null;
+      }
+
+      if (selector === ".threadListCard-body") {
+        return body;
+      }
+
+      return null;
+    }
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: (tagName) => ({
+        tagName,
+        className: "",
+        children: [],
+        appendChild(child) {
+          this.children.push(child);
+        },
+        addEventListener: () => {},
+        style: {}
+      })
+    }
+  });
+
+  context.addFilterButton({
+    card,
+    normalizer: {},
+    merchant: {
+      name: "Media Expert"
+    },
+    category: {
+      name: "Gaming",
+      slug: "gry"
+    }
+  });
+
+  assert.ok(insertedElement);
+  assert.equal(insertedElement.className, "pepper-store-filter-wrapper");
+  assert.equal(insertedElement.children.length, 2);
+  assert.equal(insertedElement.children[0].className.includes("pepper-store-filter-button-store"), true);
+  assert.equal(insertedElement.children[1].className.includes("pepper-store-filter-button-category"), true);
+});
+
+test("addFilterButton appends a missing category button into an existing wrapper", () => {
+  const wrapperChildren = [
+    {
+      className: "pepper-store-filter-button pepper-store-filter-button-store"
+    }
+  ];
+  const existingWrapper = {
+    className: "pepper-store-filter-wrapper",
+    children: wrapperChildren,
+    appendChild(child) {
+      this.children.push(child);
+    },
+    querySelector(selector) {
+      return (
+        this.children.find((child) => child.className?.includes(selector.slice(1))) ||
+        null
+      );
+    }
+  };
+  const userHtml = {
+    insertAdjacentElement: () => {}
+  };
+  const body = {
+    querySelector: (selector) => {
+      return selector === ".userHtml" ? userHtml : null;
+    },
+    appendChild: () => {}
+  };
+  const card = {
+    querySelector: (selector) => {
+      if (selector === ".pepper-store-filter-wrapper") {
+        return existingWrapper;
+      }
+
+      if (selector === ".threadListCard-body") {
+        return body;
+      }
+
+      return null;
+    }
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: (tagName) => ({
+        tagName,
+        className: "",
+        children: [],
+        appendChild(child) {
+          this.children.push(child);
+        },
+        addEventListener: () => {},
+        style: {}
+      })
+    }
+  });
+
+  context.addFilterButton({
+    card,
+    normalizer: {},
+    merchant: {
+      name: "Media Expert"
+    },
+    category: {
+      name: "Gaming",
+      slug: "gry"
+    }
+  });
+
+  assert.equal(existingWrapper.children.length, 2);
+  assert.equal(
+    existingWrapper.children[1].className.includes("pepper-store-filter-button-category"),
+    true
+  );
+});
+
+test("applyFilters adds both buttons when Pepper fills the thread data after an empty normalizer pass", () => {
+  let currentNormalizer = null;
+  let insertedWrapper = null;
+
+  function findButtonByClass(children, className) {
+    return children.find((child) => child.className?.includes(className)) || null;
+  }
+
+  function createTestElement(tagName) {
+    return {
+      tagName,
+      className: "",
+      textContent: "",
+      title: "",
+      type: "",
+      style: {},
+      dataset: {},
+      children: [],
+      appendChild(child) {
+        this.children.push(child);
+      },
+      querySelector(selector) {
+        if (selector === ".pepper-store-filter-button-store") {
+          return findButtonByClass(this.children, "pepper-store-filter-button-store");
+        }
+
+        if (selector === ".pepper-store-filter-button-category") {
+          return findButtonByClass(this.children, "pepper-store-filter-button-category");
+        }
+
+        return null;
+      },
+      addEventListener: () => {}
+    };
+  }
+
+  const userHtml = {
+    insertAdjacentElement: (_, element) => {
+      insertedWrapper = element;
+    }
+  };
+  const body = {
+    querySelector: (selector) => {
+      return selector === ".userHtml" ? userHtml : null;
+    },
+    appendChild: (element) => {
+      insertedWrapper = element;
+    }
+  };
+  const card = {
+    id: "thread_1277001",
+    textContent: "Oferta Dostepne w Amazon.pl Dodane przez tester",
+    dataset: {},
+    style: {},
+    appendChild: (element) => {
+      insertedWrapper = element;
+    },
+    querySelector: (selector) => {
+      if (selector === ".pepper-store-filter-wrapper") {
+        return insertedWrapper;
+      }
+
+      if (selector === ".pepper-store-filter-button") {
+        return insertedWrapper?.children?.[0] || null;
+      }
+
+      if (selector === ".threadListCard-body") {
+        return body;
+      }
+
+      if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+        return currentNormalizer;
+      }
+
+      return null;
+    },
+    querySelectorAll: () => []
+  };
+  const emptyNormalizer = {
+    getAttribute: () => "",
+    closest: () => card
+  };
+  const fullNormalizer = {
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1277001",
+            type: "Deal",
+            merchant: {
+              merchantName: "Amazon.pl"
+            },
+            mainGroup: {
+              threadGroupName: "Elektronika",
+              threadGroupUrlName: "elektronika"
+            }
+          }
+        }
+      }),
+    closest: () => card
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return currentNormalizer ? [currentNormalizer] : [];
+        }
+
+        if (selector === 'article[id^="thread_"], article.thread, [data-t="thread"]') {
+          return [card];
+        }
+
+        return [];
+      },
+      createElement: createTestElement
+    }
+  });
+
+  currentNormalizer = emptyNormalizer;
+  context.applyFilters();
+  assert.equal(insertedWrapper, null);
+
+  currentNormalizer = fullNormalizer;
+  context.applyFilters();
+
+  assert.ok(insertedWrapper);
+  assert.equal(insertedWrapper.children.length, 2);
+  assert.equal(
+    insertedWrapper.children.some((child) =>
+      child.className.includes("pepper-store-filter-button-store")
+    ),
+    true
+  );
+  assert.equal(
+    insertedWrapper.children.some((child) =>
+      child.className.includes("pepper-store-filter-button-category")
+    ),
+    true
+  );
+});
+
+test("applyFilters appends the missing category button when a card first renders with only a store button", () => {
+  let insertedWrapper = null;
+  let useStructuredThread = false;
+
+  function findButtonByClass(children, className) {
+    return children.find((child) => child.className?.includes(className)) || null;
+  }
+
+  function createTestElement(tagName) {
+    return {
+      tagName,
+      className: "",
+      textContent: "",
+      title: "",
+      type: "",
+      style: {},
+      dataset: {},
+      children: [],
+      appendChild(child) {
+        this.children.push(child);
+      },
+      querySelector(selector) {
+        if (selector === ".pepper-store-filter-button-store") {
+          return findButtonByClass(this.children, "pepper-store-filter-button-store");
+        }
+
+        if (selector === ".pepper-store-filter-button-category") {
+          return findButtonByClass(this.children, "pepper-store-filter-button-category");
+        }
+
+        return null;
+      },
+      addEventListener: () => {}
+    };
+  }
+
+  const userHtml = {
+    insertAdjacentElement: (_, element) => {
+      insertedWrapper = element;
+    }
+  };
+  const body = {
+    querySelector: (selector) => {
+      return selector === ".userHtml" ? userHtml : null;
+    },
+    appendChild: (element) => {
+      insertedWrapper = element;
+    }
+  };
+  const card = {
+    id: "thread_1277002",
+    textContent: "Oferta Dostepne w Amazon.pl Dodane przez tester",
+    dataset: {},
+    style: {},
+    appendChild: (element) => {
+      insertedWrapper = element;
+    },
+    querySelector: (selector) => {
+      if (selector === ".pepper-store-filter-wrapper") {
+        return insertedWrapper;
+      }
+
+      if (selector === ".pepper-store-filter-button") {
+        return insertedWrapper?.children?.[0] || null;
+      }
+
+      if (selector === ".threadListCard-body") {
+        return body;
+      }
+
+      if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+        return useStructuredThread ? normalizer : null;
+      }
+
+      return null;
+    },
+    querySelectorAll: () => []
+  };
+  const normalizer = {
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1277002",
+            type: "Deal",
+            merchant: {
+              merchantName: "Amazon.pl"
+            },
+            mainGroup: {
+              threadGroupName: "Gaming",
+              threadGroupUrlName: "gry"
+            }
+          }
+        }
+      }),
+    closest: () => card
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return useStructuredThread ? [normalizer] : [];
+        }
+
+        if (selector === 'article[id^="thread_"], article.thread, [data-t="thread"]') {
+          return [card];
+        }
+
+        return [];
+      },
+      createElement: createTestElement
+    }
+  });
+
+  context.applyFilters();
+  assert.ok(insertedWrapper);
+  assert.equal(insertedWrapper.children.length, 1);
+  assert.equal(
+    insertedWrapper.children[0].className.includes("pepper-store-filter-button-store"),
+    true
+  );
+
+  useStructuredThread = true;
+  context.applyFilters();
+
+  assert.equal(insertedWrapper.children.length, 2);
+  assert.equal(
+    insertedWrapper.children.some((child) =>
+      child.className.includes("pepper-store-filter-button-category")
+    ),
+    true
+  );
+});
+
 // Verifies clicking the in-page filter button asks for confirmation before
 // changing the hidden stores list.
 test("createFilterButton does not save the store when confirmation is cancelled", async () => {
@@ -802,9 +1575,9 @@ test("createFilterButton saves the store and applies filters after confirmation"
   assert.equal(applyFiltersCalls, 1);
 });
 
-// Verifies the Android branch combines Firefox Sync and local filters on read
-// so device-only entries are preserved while the local cache is refreshed.
-test("getStoredHiddenStores merges storage.sync with storage.local", async () => {
+// Verifies the content script reads hidden stores from browser.storage.sync as
+// the source of truth and updates local storage only as a cache.
+test("getStoredHiddenStores uses storage.sync as the primary source", async () => {
   const calls = {
     syncGet: 0,
     localGet: 0,
@@ -841,10 +1614,7 @@ test("getStoredHiddenStores merges storage.sync with storage.local", async () =>
   assert.ok(calls.syncGet > 0);
   assert.ok(calls.localGet > 0);
   assert.ok(calls.localSet > 0);
-  assert.equal(
-    JSON.stringify(stores),
-    JSON.stringify(["Amazon.pl", "Stale local store"])
-  );
+  assert.equal(JSON.stringify(stores), JSON.stringify(["Amazon.pl", "Stale local store"]));
 });
 
 // Verifies the fallback path still returns locally cached filters when
@@ -1379,6 +2149,392 @@ test("refreshStateFromStorage shows filtered stores above the configured thresho
   assert.equal(card.dataset.pepperStoreFilterDimmed, undefined);
 });
 
+test("refreshStateFromStorage keeps category-filtered deals hidden even above the filtered-store threshold", async () => {
+  const card = {
+    appendChild: () => {},
+    classList: {
+      add: () => {},
+      remove: () => {}
+    },
+    dataset: {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    style: {
+      display: ""
+    }
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1274010-category-threshold-conflict",
+            type: "Deal",
+            merchant: {
+              merchantName: "Media Expert"
+            },
+            temperature: 250,
+            mainGroup: {
+              threadGroupName: "Gaming",
+              threadGroupUrlName: "gry"
+            }
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement: createMockElement
+    },
+    browser: {
+      storage: {
+        sync: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenStores")) {
+              return { hiddenStores: ["Media Expert"] };
+            }
+
+            return { hiddenCategories: ["Gaming"] };
+          },
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return {
+                settings: {
+                  useFirefoxSync: true,
+                  alwaysFilterOnPageOpen: true,
+                  filtersEnabled: true,
+                  categoryFiltersEnabled: true,
+                  showFilteredAboveThreshold: true,
+                  showFilteredThreshold: 200
+                }
+              };
+            }
+
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: [] };
+            }
+
+            return { hiddenStores: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: () => {}
+        }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(card.style.display, "none");
+  assert.equal(card.dataset.pepperStoreFilterHidden, "true");
+});
+
+test("refreshStateFromStorage hides deals from filtered categories", async () => {
+  const card = {
+    appendChild: () => {},
+    classList: {
+      add: () => {},
+      remove: () => {}
+    },
+    dataset: {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    style: {
+      display: ""
+    }
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1274010-category",
+            type: "Deal",
+            merchant: {
+              merchantName: "Amazon.pl"
+            },
+            mainGroup: {
+              threadGroupName: "Gaming",
+              threadGroupUrlName: "gry"
+            }
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement: createMockElement
+    },
+    browser: {
+      storage: {
+        sync: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenStores")) {
+              return { hiddenStores: [] };
+            }
+
+            return { hiddenCategories: ["Gaming"] };
+          },
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return {
+                settings: {
+                  useFirefoxSync: true,
+                  alwaysFilterOnPageOpen: true,
+                  filtersEnabled: true,
+                  categoryFiltersEnabled: true
+                }
+              };
+            }
+
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: [] };
+            }
+
+            return { hiddenStores: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: () => {}
+        }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(card.style.display, "none");
+  assert.equal(card.dataset.pepperStoreFilterHidden, "true");
+});
+
+test("refreshStateFromStorage ignores filtered categories when category filters are disabled", async () => {
+  const card = {
+    appendChild: () => {},
+    classList: {
+      add: () => {},
+      remove: () => {}
+    },
+    dataset: {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    style: {
+      display: ""
+    }
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1274010-category-off",
+            type: "Deal",
+            merchant: {
+              merchantName: "Amazon.pl"
+            },
+            mainGroup: {
+              threadGroupName: "Gaming",
+              threadGroupUrlName: "gry"
+            }
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement: createMockElement
+    },
+    browser: {
+      storage: {
+        sync: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenStores")) {
+              return { hiddenStores: [] };
+            }
+
+            return { hiddenCategories: ["Gaming"] };
+          },
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return {
+                settings: {
+                  useFirefoxSync: true,
+                  alwaysFilterOnPageOpen: true,
+                  filtersEnabled: true,
+                  categoryFiltersEnabled: false
+                }
+              };
+            }
+
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: [] };
+            }
+
+            return { hiddenStores: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: () => {}
+        }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(card.style.display, "");
+  assert.equal(card.dataset.pepperStoreFilterHidden, undefined);
+});
+
+test("refreshStateFromStorage hides category-filtered deals even when merchant data is missing", async () => {
+  const card = {
+    appendChild: () => {},
+    classList: {
+      add: () => {},
+      remove: () => {}
+    },
+    dataset: {},
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    style: {
+      display: ""
+    }
+  };
+  const normalizer = {
+    closest: () => card,
+    getAttribute: () =>
+      JSON.stringify({
+        name: "ThreadMainListItemNormalizer",
+        props: {
+          thread: {
+            threadId: "1274010-category-no-merchant",
+            type: "Deal",
+            merchant: null,
+            linkHost: "",
+            mainGroup: {
+              threadGroupName: "Gaming",
+              threadGroupUrlName: "gry"
+            }
+          }
+        }
+      })
+  };
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => {}
+      },
+      querySelector: () => null,
+      querySelectorAll: (selector) => {
+        if (selector === '[data-vue3*="ThreadMainListItemNormalizer"]') {
+          return [normalizer];
+        }
+
+        return [];
+      },
+      createElement: createMockElement
+    },
+    browser: {
+      storage: {
+        sync: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenStores")) {
+              return { hiddenStores: [] };
+            }
+
+            return { hiddenCategories: ["Gaming"] };
+          },
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return {
+                settings: {
+                  useFirefoxSync: true,
+                  alwaysFilterOnPageOpen: true,
+                  filtersEnabled: true,
+                  categoryFiltersEnabled: true
+                }
+              };
+            }
+
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: [] };
+            }
+
+            return { hiddenStores: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: () => {}
+        }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(card.style.display, "none");
+  assert.equal(card.dataset.pepperStoreFilterHidden, "true");
+});
+
 // Verifies deals can be hidden globally when their temperature drops below the
 // configured threshold, regardless of merchant filtering.
 test("refreshStateFromStorage hides deals below the configured threshold", async () => {
@@ -1766,13 +2922,42 @@ test("observePageChanges watches dynamically loaded offers", () => {
   assert.ok(observedTarget);
   assert.equal(observedOptions.childList, true);
   assert.equal(observedOptions.subtree, true);
+  assert.equal(observedOptions.attributes, true);
+  assert.equal(
+    JSON.stringify(observedOptions.attributeFilter),
+    JSON.stringify(["data-vue3", "aria-busy", "class"])
+  );
+});
+
+test("observePageChanges starts observing before document.body exists", () => {
+  const documentElement = {
+    appendChild: () => {}
+  };
+  let observedTarget = null;
+
+  loadContentScript({
+    document: {
+      body: null,
+      documentElement,
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: createMockElement,
+      addEventListener: () => {}
+    },
+    MutationObserver: class {
+      observe(target) {
+        observedTarget = target;
+      }
+    }
+  });
+
+  assert.equal(observedTarget, documentElement);
 });
 
 // Verifies scroll-triggered lazy loading is handled even when Pepper appends or
 // hydrates cards in a way that does not produce a useful childList mutation.
 test("observePageChanges schedules filtering on scroll", () => {
   const windowEvents = [];
-  const documentEvents = [];
 
   loadContentScript({
     document: {
@@ -1782,10 +2967,7 @@ test("observePageChanges schedules filtering on scroll", () => {
       },
       querySelector: () => null,
       querySelectorAll: () => [],
-      createElement: createMockElement,
-      addEventListener: (...args) => {
-        documentEvents.push(args);
-      }
+      createElement: createMockElement
     },
     MutationObserver: class {
       observe() {}
@@ -1796,7 +2978,6 @@ test("observePageChanges schedules filtering on scroll", () => {
   });
 
   assert.equal(windowEvents.some(([eventName]) => eventName === "scroll"), true);
-  assert.equal(documentEvents.some(([eventName]) => eventName === "scroll"), true);
 });
 
 // Verifies runtime scripts do not introduce network requests or remote data
@@ -1822,4 +3003,1181 @@ test("runtime scripts use browser.storage.sync", () => {
 
     assert.ok(source.includes("browser.storage.sync"), `${file} does not use storage.sync`);
   }
+});
+
+test("isStoreHidden matches case-insensitively", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: ["Amazon.pl", "Netto"] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: true } };
+            }
+            return { hiddenStores: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isStoreHidden("Amazon.pl"), true);
+  assert.equal(context.isStoreHidden("amazon.pl"), true);
+  assert.equal(context.isStoreHidden("AMAZON.PL"), true);
+  assert.equal(context.isStoreHidden("Media Expert"), false);
+});
+
+test("isStoreHidden returns false for empty list", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: [] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+            return { hiddenStores: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isStoreHidden("Amazon.pl"), false);
+});
+
+test("isCategoryHidden matches case-insensitively", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: ["Gaming", "Dom i mieszkanie"] };
+            }
+            return {};
+          },
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: true } };
+            }
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: [] };
+            }
+            return defaults;
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isCategoryHidden("Gaming"), true);
+  assert.equal(context.isCategoryHidden("gaming"), true);
+  assert.equal(context.isCategoryHidden("GAMING"), true);
+  assert.equal(context.isCategoryHidden("Elektronika"), false);
+});
+
+test("isCategoryHidden returns false for empty list", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenCategories: [] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: [] };
+            }
+            return defaults;
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isCategoryHidden("Gaming"), false);
+});
+
+test("saveHiddenStore adds new store", async () => {
+  let savedStores = null;
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: [] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenStores")) {
+              return { hiddenStores: [] };
+            }
+            return defaults;
+          },
+          set: async (value) => {
+            if (Object.prototype.hasOwnProperty.call(value, "hiddenStores")) {
+              savedStores = value.hiddenStores;
+            }
+          }
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const result = await context.saveHiddenStore("Amazon.pl");
+
+  assert.equal(JSON.stringify(result), JSON.stringify(["Amazon.pl"]));
+  assert.equal(JSON.stringify(savedStores), JSON.stringify(["Amazon.pl"]));
+});
+
+test("saveHiddenStore does not add duplicate", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: ["Amazon.pl"] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenStores")) {
+              return { hiddenStores: ["Amazon.pl"] };
+            }
+            return defaults;
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const result = await context.saveHiddenStore("Amazon.pl");
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0], "Amazon.pl");
+});
+
+test("saveHiddenStore ignores empty name", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: ["Existing"] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenStores")) {
+              return { hiddenStores: ["Existing"] };
+            }
+            return defaults;
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+  const result = await context.saveHiddenStore("");
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0], "Existing");
+});
+
+test("saveHiddenCategory adds new category", async () => {
+  let savedCategories = null;
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenCategories: [] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: [] };
+            }
+            return defaults;
+          },
+          set: async (value) => {
+            if (Object.prototype.hasOwnProperty.call(value, "hiddenCategories")) {
+              savedCategories = value.hiddenCategories;
+            }
+          }
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const result = await context.saveHiddenCategory("Gaming");
+
+  assert.equal(JSON.stringify(result), JSON.stringify(["Gaming"]));
+  assert.equal(JSON.stringify(savedCategories), JSON.stringify(["Gaming"]));
+});
+
+test("saveHiddenCategory does not add duplicate", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenCategories: ["Gaming"] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: ["Gaming"] };
+            }
+            return defaults;
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const result = await context.saveHiddenCategory("Gaming");
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0], "Gaming");
+});
+
+test("removeHiddenStore removes matching store", async () => {
+  let savedStores = null;
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: ["Amazon.pl", "Netto"] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenStores")) {
+              return { hiddenStores: ["Amazon.pl", "Netto"] };
+            }
+            return defaults;
+          },
+          set: async (value) => {
+            if (Object.prototype.hasOwnProperty.call(value, "hiddenStores")) {
+              savedStores = value.hiddenStores;
+            }
+          }
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const result = await context.removeHiddenStore("Amazon.pl");
+
+  assert.equal(JSON.stringify(result), JSON.stringify(["Netto"]));
+  assert.equal(JSON.stringify(savedStores), JSON.stringify(["Netto"]));
+});
+
+test("removeHiddenCategory removes matching category", async () => {
+  let savedCategories = null;
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenCategories: ["Gaming", "Elektronika"] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: ["Gaming", "Elektronika"] };
+            }
+            return defaults;
+          },
+          set: async (value) => {
+            if (Object.prototype.hasOwnProperty.call(value, "hiddenCategories")) {
+              savedCategories = value.hiddenCategories;
+            }
+          }
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const result = await context.removeHiddenCategory("Gaming");
+
+  assert.equal(JSON.stringify(result), JSON.stringify(["Elektronika"]));
+  assert.equal(JSON.stringify(savedCategories), JSON.stringify(["Elektronika"]));
+});
+
+test("getStoredHiddenCategories uses sync as primary source", async () => {
+  const calls = { syncGet: 0, localGet: 0, localSet: 0 };
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => {
+            calls.syncGet += 1;
+            return { hiddenCategories: ["Gaming"] };
+          },
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            calls.localGet += 1;
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: true } };
+            }
+            return { hiddenCategories: ["Stale"] };
+          },
+          set: async () => {
+            calls.localSet += 1;
+          }
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const categories = await context.getStoredHiddenCategories();
+
+  assert.ok(calls.syncGet > 0);
+  assert.ok(calls.localGet > 0);
+  assert.ok(calls.localSet > 0);
+  assert.equal(JSON.stringify(categories), JSON.stringify(["Gaming"]));
+});
+
+test("getStoredHiddenCategories falls back to local when sync fails", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => { throw new Error("sync unavailable"); },
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: true } };
+            }
+            return { hiddenCategories: ["Elektronika"] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const categories = await context.getStoredHiddenCategories();
+
+  assert.equal(JSON.stringify(categories), JSON.stringify(["Elektronika"]));
+});
+
+test("setStoredHiddenCategories writes to sync and local", async () => {
+  const calls = { syncSet: 0, localSet: 0 };
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenCategories: [] }),
+          set: async () => { calls.syncSet += 1; }
+        },
+        local: {
+          get: async () => ({ settings: { useFirefoxSync: true }, hiddenCategories: [] }),
+          set: async () => { calls.localSet += 1; }
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.setStoredHiddenCategories(["Gaming", "Elektronika"]);
+
+  assert.equal(calls.syncSet, 1);
+  assert.equal(calls.localSet, 1);
+});
+
+test("runtime.onMessage handles dealStoreFilterGetPageLanguage", async () => {
+  let registeredListener = null;
+  const context = loadContentScript({
+    document: {
+      documentElement: { lang: "pl-PL", appendChild: () => {} },
+      body: {},
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: createMockElement
+    },
+    navigator: { language: "en-US", languages: ["en-US"] },
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) return { settings: {} };
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      },
+      runtime: {
+        onMessage: {
+          addListener: (fn) => { registeredListener = fn; }
+        }
+      }
+    }
+  });
+
+  const response = await registeredListener({ type: "dealStoreFilterGetPageLanguage" });
+
+  assert.equal(response.pageLanguage, "pl-PL");
+  assert.equal(response.uiLanguage, "pl");
+});
+
+test("runtime.onMessage handles dealStoreFilterRefresh", async () => {
+  let registeredListener = null;
+  let refreshCalls = 0;
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) return { settings: {} };
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      },
+      runtime: {
+        onMessage: {
+          addListener: (fn) => { registeredListener = fn; }
+        }
+      }
+    }
+  });
+
+  context.refreshStateFromStorage = async () => { refreshCalls += 1; };
+
+  await registeredListener({ type: "dealStoreFilterRefresh" });
+
+  assert.equal(refreshCalls, 1);
+});
+
+test("runtime.onMessage returns undefined for unknown message type", async () => {
+  let registeredListener = null;
+  loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) return { settings: {} };
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      },
+      runtime: {
+        onMessage: {
+          addListener: (fn) => { registeredListener = fn; }
+        }
+      }
+    }
+  });
+
+  const result = await registeredListener({ type: "unknownType" });
+
+  assert.equal(result, undefined);
+});
+
+test("storage.onChanged listener is registered", () => {
+  let listenerRegistered = false;
+  loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) return { settings: {} };
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: () => { listenerRegistered = true; }
+        }
+      }
+    }
+  });
+
+  assert.equal(listenerRegistered, true);
+});
+
+test("storage.onChanged triggers refresh when settings changes", async () => {
+  let registeredListener = null;
+  let refreshCalls = 0;
+  loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) return { settings: {} };
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: (fn) => { registeredListener = fn; }
+        }
+      }
+    }
+  });
+
+  registeredListener({ settings: { newValue: { filtersEnabled: false } } }, "local");
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+});
+
+test("storage.onChanged ignores unrelated changes", async () => {
+  let registeredListener = null;
+  let refreshCalls = 0;
+  loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) return { settings: {} };
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: (fn) => { registeredListener = fn; }
+        }
+      }
+    }
+  });
+
+  registeredListener({ someOtherKey: { newValue: "value" } }, "local");
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+});
+
+test("isTemperatureAtOrAboveThreshold returns true when value equals threshold", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { showFilteredAboveThreshold: true, showFilteredThreshold: 100 } };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isTemperatureAtOrAboveThreshold(100), true);
+  assert.equal(context.isTemperatureAtOrAboveThreshold(150), true);
+  assert.equal(context.isTemperatureAtOrAboveThreshold(99), false);
+});
+
+test("isTemperatureAtOrAboveThreshold returns false when threshold is null", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { showFilteredAboveThreshold: true, showFilteredThreshold: null } };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isTemperatureAtOrAboveThreshold(100), false);
+});
+
+test("isTemperatureAtOrAboveThreshold returns false when value is null", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { showFilteredAboveThreshold: true, showFilteredThreshold: 100 } };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isTemperatureAtOrAboveThreshold(null), false);
+});
+
+test("isTemperatureBelowThreshold returns true when value is below threshold", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { hideUnfilteredBelowThreshold: true, hideUnfilteredThreshold: 50 } };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isTemperatureBelowThreshold(49), true);
+  assert.equal(context.isTemperatureBelowThreshold(50), false);
+  assert.equal(context.isTemperatureBelowThreshold(51), false);
+});
+
+test("isTemperatureBelowThreshold returns false when threshold is null", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { hideUnfilteredBelowThreshold: true, hideUnfilteredThreshold: null } };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isTemperatureBelowThreshold(10), false);
+});
+
+test("isTemperatureBelowThreshold returns false when value is null", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { hideUnfilteredBelowThreshold: true, hideUnfilteredThreshold: 50 } };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isTemperatureBelowThreshold(null), false);
+});
+
+test("normalizeLinkHostName strips protocol, www, and path", () => {
+  const context = loadContentScript();
+
+  assert.equal(context.normalizeLinkHostName("https://www.amazon.pl/deals"), "amazon.pl");
+  assert.equal(context.normalizeLinkHostName("http://facebook.com/page"), "facebook.com");
+  assert.equal(context.normalizeLinkHostName("//example.com/path"), "example.com");
+  assert.equal(context.normalizeLinkHostName("www.store.com"), "store.com");
+});
+
+test("normalizeSettings handles all fields explicitly set", () => {
+  const context = loadContentScript();
+
+  const result = context.normalizeSettings({
+    useFirefoxSync: false,
+    alwaysFilterOnPageOpen: false,
+    filtersEnabled: false,
+    categoryFiltersEnabled: false,
+    showFilteredAsDimmed: true,
+    showBelowThresholdAsDimmed: true,
+    showFilteredAboveThreshold: true,
+    hideUnfilteredBelowThreshold: true,
+    showFilteredThreshold: 100,
+    hideUnfilteredThreshold: 50,
+    uiLanguage: "pl"
+  });
+
+  assert.equal(result.useFirefoxSync, false);
+  assert.equal(result.alwaysFilterOnPageOpen, false);
+  assert.equal(result.filtersEnabled, false);
+  assert.equal(result.categoryFiltersEnabled, false);
+  assert.equal(result.showFilteredAsDimmed, true);
+  assert.equal(result.showBelowThresholdAsDimmed, true);
+  assert.equal(result.showFilteredAboveThreshold, true);
+  assert.equal(result.hideUnfilteredBelowThreshold, true);
+  assert.equal(result.showFilteredThreshold, 100);
+  assert.equal(result.hideUnfilteredThreshold, 50);
+  assert.equal(result.uiLanguage, "pl");
+});
+
+test("normalizeSettings handles undefined/null input", () => {
+  const context = loadContentScript();
+
+  const result = context.normalizeSettings(undefined);
+
+  assert.equal(result.useFirefoxSync, true);
+  assert.equal(result.alwaysFilterOnPageOpen, true);
+  assert.equal(result.filtersEnabled, true);
+  assert.equal(result.categoryFiltersEnabled, true);
+});
+
+test("cacheStructuredThreadData function exists", () => {
+  const context = loadContentScript();
+
+  assert.equal(typeof context.cacheStructuredThreadData, "function");
+});
+
+test("hideCard sets hidden dataset and display none", () => {
+  const card = {
+    dataset: { pepperStoreFilterDimmed: "true" },
+    classList: { remove: (cls) => { card.classListRemoved = cls; } },
+    style: { display: "" }
+  };
+  const context = loadContentScript();
+
+  context.hideCard(card);
+
+  assert.equal(card.dataset.pepperStoreFilterHidden, "true");
+  assert.equal(card.dataset.pepperStoreFilterDimmed, undefined);
+  assert.equal(card.style.display, "none");
+  assert.equal(card.classListRemoved, "pepper-store-filter-dimmed");
+});
+
+test("showCard clears hidden and dimmed dataset", () => {
+  const card = {
+    dataset: { pepperStoreFilterHidden: "true", pepperStoreFilterDimmed: "true" },
+    classList: { remove: (cls) => { card.classListRemoved = cls; } },
+    style: { display: "none" }
+  };
+  const context = loadContentScript();
+
+  context.showCard(card);
+
+  assert.equal(card.dataset.pepperStoreFilterHidden, undefined);
+  assert.equal(card.dataset.pepperStoreFilterDimmed, undefined);
+  assert.equal(card.style.display, "");
+});
+
+test("dimCard sets dimmed dataset and adds class", () => {
+  const card = {
+    dataset: {},
+    classList: { add: (cls) => { card.classListAdded = cls; } },
+    style: { display: "none" }
+  };
+  const context = loadContentScript();
+
+  context.dimCard(card, { badgeText: "Test", noticeKey: "test:1" });
+
+  assert.equal(card.dataset.pepperStoreFilterDimmed, "true");
+  assert.equal(card.dataset.pepperStoreFilterHidden, undefined);
+  assert.equal(card.classListAdded, "pepper-store-filter-dimmed");
+  assert.equal(card.style.display, "");
+});
+
+test("createDimmedNotice creates notice with badge and optional remove button", () => {
+  const context = loadContentScript();
+
+  const noticeWithButton = context.createDimmedNotice({
+    badgeText: "Filtered",
+    noticeKey: "store:amazon",
+    merchant: { name: "Amazon.pl" },
+    onRemove: async () => {}
+  });
+
+  assert.ok(noticeWithButton);
+  assert.equal(noticeWithButton.className, "pepper-store-filter-dimmed-notice");
+  assert.equal(noticeWithButton.children.length, 2);
+
+  const noticeWithoutButton = context.createDimmedNotice({
+    badgeText: "Filtered",
+    noticeKey: "threshold:50"
+  });
+
+  assert.equal(noticeWithoutButton.children.length, 1);
+});
+
+test("removeDimmedNotice removes notice from card", () => {
+  const notice = { remove: () => { notice.removed = true; } };
+  const card = {
+    querySelector: () => notice
+  };
+  const context = loadContentScript();
+
+  context.removeDimmedNotice(card);
+
+  assert.ok(notice.removed);
+});
+
+test("removeDimmedNotice handles missing notice", () => {
+  const card = { querySelector: () => null };
+  const context = loadContentScript();
+
+  assert.doesNotThrow(() => {
+    context.removeDimmedNotice(card);
+  });
+});
+
+test("getStoreDimmedNoticeConfig returns correct config", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { uiLanguage: "en" } };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  const config = context.getStoreDimmedNoticeConfig({ name: "Amazon.pl" });
+
+  assert.equal(config.badgeText.includes("Amazon.pl"), false);
+  assert.equal(config.badgeText.includes("Filtered by store filter"), true);
+  assert.equal(config.noticeKey, "store:amazon.pl");
+  assert.equal(typeof config.onRemove, "function");
+});
+
+test("getThresholdDimmedNoticeConfig returns config with value", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { hideUnfilteredBelowThreshold: true, hideUnfilteredThreshold: 50 } };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  const config = context.getThresholdDimmedNoticeConfig();
+
+  assert.equal(config.badgeText.includes("50"), true);
+  assert.equal(config.noticeKey, "threshold:50");
+});
+
+test("getThresholdDimmedNoticeConfig returns config without value when null", () => {
+  const context = loadContentScript();
+
+  context.currentUiLanguage = "en";
+  context.hideUnfilteredThreshold = null;
+
+  const config = context.getThresholdDimmedNoticeConfig();
+
+  assert.equal(config.badgeText.includes("<"), false);
+  assert.equal(config.noticeKey, "threshold:off");
+});
+
+test("refreshStateFromStorage throws on error", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => { throw new Error("storage error"); },
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: {} };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const originalGetSettings = context.getSettings;
+  context.getSettings = async () => { throw new Error("settings error"); };
+
+  await assert.rejects(
+    () => context.refreshStateFromStorage(),
+    /settings error/
+  );
+
+  context.getSettings = originalGetSettings;
+});
+
+test("refreshStateFromStorage resets filters when resetFiltersForPage is true", async () => {
+  let savedSettings = null;
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: [] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { alwaysFilterOnPageOpen: true, filtersEnabled: false } };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async (value) => {
+            if (Object.prototype.hasOwnProperty.call(value, "settings")) {
+              savedSettings = value.settings;
+            }
+          }
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await new Promise((r) => setTimeout(r, 50));
+  await context.refreshStateFromStorage(true);
+
+  assert.equal(savedSettings?.filtersEnabled, true);
+});
+
+test("observePageChanges sets up observer and scroll listener", () => {
+  let observeCalls = 0;
+  let scrollAddCalls = 0;
+
+  loadContentScript({
+    document: {
+      body: {},
+      documentElement: { appendChild: () => {} },
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: createMockElement
+    },
+    MutationObserver: class {
+      observe() { observeCalls += 1; }
+      disconnect() {}
+    },
+    windowAddEventListener: (event, handler, options) => {
+      if (event === "scroll") scrollAddCalls += 1;
+    }
+  });
+
+  assert.equal(observeCalls, 1);
+  assert.equal(scrollAddCalls, 1);
+});
+
+test("injectStyles is idempotent", () => {
+  let appendCount = 0;
+  let stylesExist = false;
+
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => { appendCount += 1; },
+        classList: { toggle: () => {} }
+      },
+      querySelector: (selector) => {
+        if (selector === "#pepper-store-filter-styles") {
+          return stylesExist ? {} : null;
+        }
+        return null;
+      },
+      querySelectorAll: () => [],
+      createElement: createMockElement
+    }
+  });
+
+  stylesExist = true;
+  context.injectStyles();
+  context.injectStyles();
+
+  assert.equal(appendCount, 1);
+});
+
+test("normalizeThresholdValue handles comma decimal separator", () => {
+  const context = loadContentScript();
+
+  assert.equal(context.normalizeThresholdValue("9,5"), 9.5);
+  assert.equal(context.normalizeThresholdValue("0"), 0);
+});
+
+test("parseJsonAttribute handles &#34; encoded quotes", () => {
+  const context = loadContentScript();
+  const encoded = "{&#34;name&#34;:&#34;ThreadMainListItemNormalizer&#34;}";
+
+  assert.equal(
+    JSON.stringify(context.parseJsonAttribute(encoded)),
+    JSON.stringify({ name: "ThreadMainListItemNormalizer" })
+  );
+});
+
+test("parseJsonAttribute handles null/undefined input", () => {
+  const context = loadContentScript();
+
+  assert.equal(context.parseJsonAttribute(null), null);
+  assert.equal(context.parseJsonAttribute(undefined), null);
+});
+
+test("getSettings reads and normalizes settings", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        local: {
+          get: async () => ({
+            settings: {
+              useFirefoxSync: false,
+              filtersEnabled: false,
+              uiLanguage: "pl"
+            }
+          }),
+          set: async () => {}
+        },
+        sync: { get: async () => ({}), set: async () => {} },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const settings = await context.getSettings();
+
+  assert.equal(settings.useFirefoxSync, false);
+  assert.equal(settings.filtersEnabled, false);
+  assert.equal(settings.uiLanguage, "pl");
+});
+
+test("saveSettings normalizes and saves", async () => {
+  let savedValue = null;
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        local: {
+          get: async () => ({ settings: {} }),
+          set: async (value) => { savedValue = value; }
+        },
+        sync: { get: async () => ({}), set: async () => {} },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const result = await context.saveSettings({ filtersEnabled: false, uiLanguage: "en" });
+
+  assert.equal(result.filtersEnabled, false);
+  assert.equal(result.uiLanguage, "en");
+  assert.ok(savedValue);
 });

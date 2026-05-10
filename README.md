@@ -26,10 +26,13 @@ Obecna wersja działa na Pepper.pl. Rozszerzenie nie jest tworzone, wspierane an
 - Działa na listach ofert oraz na stronach pojedynczych okazji.
 - Odczytuje sklep z danych `data-vue3`, jeśli obsługiwana strona udostępnia je w komponencie oferty.
 - Używa `props.thread.merchant.merchantName` jako głównej nazwy sklepu.
+- Odczytuje kategorię Peppera z `props.thread.mainGroup.threadGroupName`.
 - Gdy `merchant` jest pusty, używa `props.thread.linkHost`, np. `www.facebook.com` -> `facebook.com`.
 - Gdy dane strukturalne nie są dostępne, próbuje odczytać sklep z widocznego tekstu oferty, m.in. z etykiet `Dostępne w` i `Zrealizuj na`.
 - Ignoruje wpisy typu `Discussion`.
 - Popup pozwala ręcznie dodawać, usuwać i czyścić listę sklepów.
+- Popup ma osobne zakładki `Shops` i `Category`, dzięki czemu listy filtrów sklepów i kategorii są rozdzielone.
+- Rozszerzenie potrafi filtrować oferty także po kategorii Peppera odczytanej z `props.thread.mainGroup.threadGroupName`.
 
 ## Jak działa
 
@@ -37,6 +40,7 @@ Na listach ofert rozszerzenie najpierw odczytuje dane osadzone przez obsługiwan
 
 ```text
 props.thread.merchant.merchantName
+props.thread.mainGroup.threadGroupName
 ```
 
 Jeśli oferta nie ma przypisanego `merchant`, rozszerzenie próbuje użyć hosta linku:
@@ -54,6 +58,8 @@ Zrealizuj na Nazwa sklepu
 
 Fallback tekstowy czyści też doklejone etykiety strony, przyciski CTA i kody kuponów, aby przycisk nie dostał nazwy w stylu `FlaconiSPRINGTIMEPobierz kod`.
 
+Na listach ofert Peppera pierwsze karty bywają przebudowywane przez frontend już po początkowym wyrenderowaniu. Żeby nie zgubić kategorii lub nazwy sklepu, rozszerzenie startuje na `document_start`, obserwuje DOM jeszcze przed pojawieniem się `body`, zapisuje ustrukturyzowane dane oferty z `ThreadMainListItemNormalizer` do wewnętrznego cache i może użyć ich ponownie, nawet jeśli Pepper później usunie albo podmieni sam normalizer w DOM.
+
 Jeśli uda się ustalić sklep, rozszerzenie dodaje przy ofercie przycisk:
 
 ```text
@@ -68,7 +74,7 @@ Nazwy sklepów najlepiej dodawać dokładnie tak, jak występują na obsługiwan
 
 Lista ukrytych sklepów jest przechowywana przy użyciu `browser.storage.sync`, aby umożliwić synchronizację filtrów między urządzeniami użytkownika przez Firefox Sync. Rozszerzenie nie wysyła tych danych do autora dodatku, nie korzysta z własnego serwera, nie zawiera analityki i nie ładuje zdalnego kodu.
 
-Rozszerzenie używa `browser.storage.local` jako fallback/cache. Na gałęzi `android` lista odczytana z Firefox Sync jest łączona z lokalną kopią, żeby nie zgubić filtrów zapisanych lokalnie, gdy synchronizacja jest chwilowo niedostępna albo zachowuje się inaczej na Firefox for Android.
+Rozszerzenie używa `browser.storage.local` wyłącznie jako fallback/cache. Gdy Firefox Sync działa, `browser.storage.sync` jest źródłem prawdy, a lokalna kopia jest nadpisywana aktualną listą. Jeśli Firefox Sync jest chwilowo niedostępny albo zwróci błąd, rozszerzenie korzysta z lokalnej kopii.
 
 Rozszerzenie nie używa:
 
@@ -84,7 +90,7 @@ Rozszerzenie nie używa:
 
 Głównym miejscem zapisu listy filtrów jest `browser.storage.sync`. Jeśli użytkownik ma włączony Firefox Sync i synchronizację dodatków, lista może być dostępna na innych urządzeniach zalogowanych do tego samego konta Firefox/Mozilla.
 
-Kopia w `browser.storage.local` jest utrzymywana po to, aby zwiększyć odporność dodatku na błędy lub niedostępność Sync. Na gałęzi `android` odczyt zwraca zduplikowaną tylko raz listę połączoną z obu miejsc zapisu.
+Kopia w `browser.storage.local` jest utrzymywana tylko po to, aby zwiększyć odporność dodatku na błędy lub niedostępność Sync.
 
 Jeśli w ustawieniach wyłączysz `Firefox Sync`, rozszerzenie nie czyta ani nie zapisuje listy w `browser.storage.sync`. W takim trybie lista filtrów zostaje tylko w lokalnym profilu Firefoksa.
 
@@ -95,6 +101,7 @@ Popup ma widok ustawień otwierany ikoną koła zębatego.
 - `Firefox Sync` - zapisuje listę filtrów w `browser.storage.sync` i utrzymuje lokalną kopię awaryjną. Po wyłączeniu lista jest zapisywana tylko lokalnie na bieżącym urządzeniu.
 - `Always filter when opening a page` - po otwarciu obsługiwanej strony automatycznie włącza filtrowanie, nawet jeśli wcześniej zostało tymczasowo wyłączone.
 - `Show filtered deals as compact previews` - zamiast ukrywać pasujące oferty, zostawia je na liście jako kompaktowy podgląd.
+- `Enable category filters` - włącza albo wyłącza filtrowanie po zapisanych kategoriach bez usuwania listy kategorii.
 - `Show filtered deals above this threshold` - pokazuje oferty z filtrowanych sklepów, jeśli ich temperatura jest równa ustawionemu progowi albo go przekracza.
 - `Show filtered deals threshold` - ustawia próg temperatury dla pokazywania ofert z filtrowanych sklepów.
 - `Hide deals below this threshold` - ukrywa oferty, jeśli ich temperatura spada poniżej ustawionego progu.
@@ -117,18 +124,6 @@ Przełącznik `Disable filters` / `Enable filters` w głównym widoku popupu tym
 
 Po zmianach w plikach kliknij `Reload` przy dodatku w `about:debugging`, a potem odśwież kartę obsługiwanej strony.
 
-## Firefox for Android
-
-Gałąź `android` zawiera deklarację zgodności z Firefox for Android:
-
-```json
-"browser_specific_settings": {
-  "gecko_android": {}
-}
-```
-
-Manifest zachowuje też stały identyfikator Gecko, wymagany przy podpisywaniu i dla stabilnego działania magazynu WebExtension.
-
 ## Publikacja / pakowanie ZIP
 
 Do Mozilla Add-ons należy wysłać ZIP zawierający pliki dodatku bez katalogu nadrzędnego.
@@ -142,19 +137,19 @@ Na Windows można użyć skryptu:
 Skrypt tworzy plik na podstawie wersji z `manifest.json`:
 
 ```text
-dist/deal-store-filter-android-<manifest-version>.zip
+dist/deal-store-filter-<manifest-version>.zip
 ```
 
 ZIP zawiera tylko pliki potrzebne do działania dodatku:
 
 - `manifest.json`
+- `i18n.js`
 - `content.js`
 - `popup.html`
 - `popup.js`
 - `popup.css`
-- `LICENSE`
 
-Do paczki nie trafiają katalogi `.git`, `.github`, `tests`, `node_modules`, `dist` ani pliki takie jak `README.md`, `package.json` i `package-lock.json`.
+Do paczki nie trafiają katalogi `.git`, `.github`, `tests`, `node_modules`, `dist` ani pliki takie jak `README.md`, `LICENSE`, `package.json` i `package-lock.json`.
 
 ## Nieoficjalny charakter dodatku
 
@@ -206,37 +201,39 @@ Uruchomienie testów:
 ```bash
 node tests/content.test.js
 node tests/manifest.test.js
-node tests/manifest-android.test.js
 ```
 
 Testy sprawdzają między innymi:
 
 - normalizację nazw sklepów,
 - zapis i odczyt przez Firefox Sync,
-- łączenie list z Firefox Sync i local storage na gałęzi Android,
 - fallback do local storage,
 - parsowanie danych `data-vue3`,
 - wyszukiwanie `props.thread`,
+- odczyt kategorii z `mainGroup`,
 - fallback do `linkHost`, gdy `merchant` jest pusty,
 - fallback do tekstu wyrenderowanej oferty,
 - obsługę etykiet `Dostępne w` i `Zrealizuj na`,
 - czyszczenie doklejonych etykiet, kodów kuponów i CTA z nazwy sklepu,
 - ignorowanie ofert bez możliwej do ustalenia nazwy sklepu,
 - ignorowanie wpisów typu `Discussion`,
-- deklaracje manifestu wymagane do publikacji,
-- deklaracje manifestu wymagane do publikacji na Firefox for Android.
+- pomijanie przedwczesnego fallbacku tekstowego dla kart, które mają już normalizer Peppera,
+- ponowne użycie zcache'owanych danych `ThreadMainListItemNormalizer`, gdy Pepper usunie normalizer z pierwszych kart,
+- ponowne dołożenie przycisku kategorii, gdy karta najpierw pojawi się tylko z przyciskiem sklepu,
+- przypadek pierwszych kart, w których Pepper najpierw renderuje pusty normalizer, a pełne dane kategorii pojawiają się dopiero chwilę później,
+- deklaracje manifestu wymagane do publikacji.
 
 Te same testy są uruchamiane w GitHub Actions.
 
 ## Pliki
 
 - `manifest.json` - konfiguracja dodatku Firefox Manifest V2.
+- `i18n.js` - współdzielone tłumaczenia i logika wyboru języka UI.
 - `content.js` - logika działająca na obsługiwanych stronach.
 - `popup.html` - HTML popupu.
 - `popup.js` - logika popupu i zarządzania listą sklepów.
 - `popup.css` - style popupu.
 - `scripts/package-amo.ps1` - skrypt tworzący ZIP do AMO.
-- `scripts/run-android-firefox-dev.ps1` - skrypt uruchamiający istniejący emulator Androida i Firefoksa z dodatkiem bez automatycznej instalacji zależności.
 
 ## Licencja
 

@@ -26,12 +26,23 @@ jobs:
       - name: Check tests syntax
         run: |
           node --check tests/content.test.js
+          node --check tests/i18n.test.js
+          node --check tests/popup.test.js
           node --check tests/manifest.test.js
 
       - name: Validate manifest JSON
         run: node -e "JSON.parse(require('fs').readFileSync('manifest.json', 'utf8'))"
 
       - name: Run tests
+        continue-on-error: true
         run: |
-          node tests/content.test.js
-          node tests/manifest.test.js
+          node --test --test-reporter spec --test-reporter-destination stdout --test-reporter junit --test-reporter-destination test-results.xml tests/*.test.js
+
+      - name: Publish test report
+        if: always()
+        uses: dorny/test-reporter@v2
+        with:
+          name: Node.js Tests
+          path: test-results.xml
+          reporter: jest-junit
+          fail-on-error: true

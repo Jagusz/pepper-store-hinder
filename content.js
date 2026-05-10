@@ -1,4 +1,5 @@
 const STORAGE_KEY = "hiddenStores";
+const CATEGORY_STORAGE_KEY = "hiddenCategories";
 const SETTINGS_KEY = "settings";
 const HIDDEN_KEY = "pepperStoreFilterHidden";
 const DIMMED_KEY = "pepperStoreFilterDimmed";
@@ -7,33 +8,116 @@ const DIMMED_NOTICE_SELECTOR = ".pepper-store-filter-dimmed-notice";
 const LOADING_CLASS = "pepper-store-filter-loading";
 const NORMALIZER_SELECTOR = '[data-vue3*="ThreadMainListItemNormalizer"]';
 const CARD_SELECTOR = 'article[id^="thread_"], article.thread, [data-t="thread"]';
-const BUTTON_SELECTOR = ".pepper-store-filter-button";
+const FILTER_BUTTON_SELECTOR = ".pepper-store-filter-button";
+const FILTER_WRAPPER_SELECTOR = ".pepper-store-filter-wrapper";
 const DEBUG_STORAGE_KEY = "pepperStoreFilterDebug";
 const DEBUG_QUERY_PARAM = "pshdebug";
 const PLUGIN_NAME = "Deal Store Filter";
+const I18N = globalThis.DealStoreFilterI18n || {
+  DEFAULT_UI_LANGUAGE: "auto",
+  normalizeUiLanguageSetting: (value) => {
+    const normalized = String(value || "").trim().toLowerCase();
+
+    return ["auto", "en", "pl"].includes(normalized) ? normalized : "auto";
+  },
+  resolveUiLanguage: (setting, options = {}) => {
+    const normalizedSetting = String(setting || "").trim().toLowerCase();
+
+    if (normalizedSetting === "en" || normalizedSetting === "pl") {
+      return normalizedSetting;
+    }
+
+    const pageLanguage = String(options.pageLanguage || "").trim().toLowerCase();
+
+    if (pageLanguage) {
+      return pageLanguage.startsWith("pl") ? "pl" : "en";
+    }
+
+    const candidates = [
+      options.browserLanguage,
+      ...(Array.isArray(options.browserLanguages) ? options.browserLanguages : [])
+    ]
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter(Boolean);
+
+    return candidates.some((value) => value.startsWith("pl")) ? "pl" : "en";
+  },
+  t: (language, key, params = {}) => {
+    const fallbackTranslations = {
+      en: {
+        removeFilterAction: "Remove filter",
+        removeFilterActionTitle: "Remove filter for {name}",
+        dimmedStoreNotice: "{pluginName}: Filtered by store filter",
+        dimmedCategoryNotice: "{pluginName}: Filtered by category filter",
+        dimmedThresholdNotice: "{pluginName}: Filtered by threshold",
+        dimmedThresholdNoticeWithValue:
+          "{pluginName}: Filtered by threshold < {value}\u00B0",
+        filterStoreButton: "Hide store: {name}",
+        filterStoreButtonTitle: "Hide deals from store: {name}",
+        filterCategoryButton: "Hide category: {name}",
+        filterCategoryButtonTitle: "Hide deals from category: {name}",
+        addStoreConfirm: "Do you want to add {name} to the filtered stores?",
+        addCategoryConfirm: "Do you want to add {name} to the filtered categories?"
+      },
+      pl: {
+        removeFilterAction: "Usu\u0144 filtr",
+        removeFilterActionTitle: "Usu\u0144 filtr dla {name}",
+        dimmedStoreNotice: "{pluginName}: Ukryte przez filtr sklepu",
+        dimmedCategoryNotice: "{pluginName}: Ukryte przez filtr kategorii",
+        dimmedThresholdNotice: "{pluginName}: Ukryte przez pr\u00F3g",
+        dimmedThresholdNoticeWithValue:
+          "{pluginName}: Ukryte przez pr\u00F3g < {value}\u00B0",
+        filterStoreButton: "Ukryj sklep: {name}",
+        filterStoreButtonTitle: "Ukryj oferty ze sklepu: {name}",
+        filterCategoryButton: "Ukryj kategori\u0119: {name}",
+        filterCategoryButtonTitle: "Ukryj oferty z kategorii: {name}",
+        addStoreConfirm:
+          "Czy chcesz doda\u0107 {name} do filtrowanych sklep\u00F3w?",
+        addCategoryConfirm:
+          "Czy chcesz doda\u0107 {name} do filtrowanych kategorii?"
+      }
+    };
+    const dictionary = fallbackTranslations[language] || fallbackTranslations.en;
+    const template = dictionary[key] || fallbackTranslations.en[key] || key;
+
+    return String(template).replace(/\{(\w+)\}/g, (match, name) => {
+      return Object.prototype.hasOwnProperty.call(params, name)
+        ? String(params[name])
+        : match;
+    });
+  }
+};
+const DEFAULT_UI_LANGUAGE = I18N.DEFAULT_UI_LANGUAGE;
 const DEFAULT_SETTINGS = {
   useFirefoxSync: true,
   alwaysFilterOnPageOpen: true,
   filtersEnabled: true,
+  categoryFiltersEnabled: true,
   showFilteredAsDimmed: false,
   showBelowThresholdAsDimmed: false,
   showFilteredAboveThreshold: false,
   hideUnfilteredBelowThreshold: false,
   showFilteredThreshold: null,
-  hideUnfilteredThreshold: null
+  hideUnfilteredThreshold: null,
+  uiLanguage: DEFAULT_UI_LANGUAGE
 };
 
 let hiddenStores = [];
+let hiddenCategories = [];
 let filtersEnabled = true;
+let categoryFiltersEnabled = true;
 let showFilteredAsDimmed = false;
 let showBelowThresholdAsDimmed = false;
 let showFilteredAboveThreshold = false;
 let hideUnfilteredBelowThreshold = false;
 let showFilteredThreshold = null;
 let hideUnfilteredThreshold = null;
+let currentUiLanguage = "en";
 let lastDebugSignature = "";
 let applyFiltersTimer = null;
 let confirmModalState = null;
+const threadDataCache = new Map();
+const THREAD_DATA_CACHE_MAX_SIZE = 500;
 
 function isDebugEnabled() {
   try {
@@ -70,6 +154,30 @@ function normalizeStoreName(value) {
   return String(value || "")
     .trim()
     .replace(/\s+/g, " ");
+}
+
+function getCurrentBrowserLanguage() {
+  return browser.i18n?.getUILanguage?.() || navigator.language || "";
+}
+
+function getCurrentBrowserLanguages() {
+  return Array.isArray(navigator.languages) ? navigator.languages : [];
+}
+
+function getPageLanguage() {
+  return document.documentElement?.lang || "";
+}
+
+function resolvePageUiLanguage(settings = null) {
+  return I18N.resolveUiLanguage(settings?.uiLanguage, {
+    pageLanguage: getPageLanguage(),
+    browserLanguage: getCurrentBrowserLanguage(),
+    browserLanguages: getCurrentBrowserLanguages()
+  });
+}
+
+function t(key, params = {}) {
+  return I18N.t(currentUiLanguage, key, params);
 }
 
 function normalizeThresholdValue(value) {
@@ -267,6 +375,7 @@ function normalizeSettings(value) {
     useFirefoxSync: value?.useFirefoxSync !== false,
     alwaysFilterOnPageOpen: value?.alwaysFilterOnPageOpen !== false,
     filtersEnabled: value?.filtersEnabled !== false,
+    categoryFiltersEnabled: value?.categoryFiltersEnabled !== false,
     showFilteredAsDimmed: value?.showFilteredAsDimmed === true,
     showBelowThresholdAsDimmed: value?.showBelowThresholdAsDimmed === true,
     showFilteredAboveThreshold: value?.showFilteredAboveThreshold === true,
@@ -274,7 +383,8 @@ function normalizeSettings(value) {
     showFilteredThreshold:
       normalizeThresholdValue(value?.showFilteredThreshold) ?? legacyThreshold,
     hideUnfilteredThreshold:
-      normalizeThresholdValue(value?.hideUnfilteredThreshold) ?? legacyThreshold
+      normalizeThresholdValue(value?.hideUnfilteredThreshold) ?? legacyThreshold,
+    uiLanguage: I18N.normalizeUiLanguageSetting(value?.uiLanguage)
   };
 }
 
@@ -343,6 +453,56 @@ async function removeHiddenStore(storeName) {
   );
 }
 
+async function getStoredHiddenCategories(settings = null) {
+  const activeSettings = settings || await getSettings();
+
+  if (activeSettings.useFirefoxSync && browser.storage.sync) {
+    try {
+      const syncResult = await browser.storage.sync.get({ [CATEGORY_STORAGE_KEY]: [] });
+      const syncedCategories = mergeStoreLists(syncResult[CATEGORY_STORAGE_KEY]);
+
+      const localResult = await browser.storage.local.get({ [CATEGORY_STORAGE_KEY]: [] });
+      const localCategories = mergeStoreLists(localResult[CATEGORY_STORAGE_KEY]);
+
+      if (JSON.stringify(localCategories) !== JSON.stringify(syncedCategories)) {
+        await browser.storage.local.set({ [CATEGORY_STORAGE_KEY]: syncedCategories });
+      }
+
+      return syncedCategories;
+    } catch (error) {
+      debugLog("Firefox Sync unavailable while reading category filters", error);
+    }
+  }
+
+  const localResult = await browser.storage.local.get({ [CATEGORY_STORAGE_KEY]: [] });
+  return mergeStoreLists(localResult[CATEGORY_STORAGE_KEY]);
+}
+
+async function setStoredHiddenCategories(categories) {
+  const settings = await getSettings();
+  const normalizedCategories = mergeStoreLists(categories);
+
+  if (settings.useFirefoxSync && browser.storage.sync) {
+    try {
+      await browser.storage.sync.set({ [CATEGORY_STORAGE_KEY]: normalizedCategories });
+    } catch (error) {
+      debugLog("Firefox Sync unavailable while saving category filters", error);
+    }
+  }
+
+  await browser.storage.local.set({ [CATEGORY_STORAGE_KEY]: normalizedCategories });
+  return normalizedCategories;
+}
+
+async function removeHiddenCategory(categoryName) {
+  const normalizedCategoryName = normalizeText(categoryName);
+  const currentCategories = await getStoredHiddenCategories();
+
+  return setStoredHiddenCategories(
+    currentCategories.filter((item) => normalizeText(item) !== normalizedCategoryName)
+  );
+}
+
 function parseJsonAttribute(value) {
   if (!value) {
     return null;
@@ -406,6 +566,74 @@ function getCardFromNormalizer(normalizer) {
   );
 }
 
+function getThreadIdForCard(card, thread = null) {
+  const threadId = normalizeStoreName(String(thread?.threadId || ""));
+
+  if (threadId) {
+    return threadId;
+  }
+
+  const cardIdMatch = String(card?.id || "").match(/^thread_(\d+)$/);
+
+  if (cardIdMatch?.[1]) {
+    return cardIdMatch[1];
+  }
+
+  return "";
+}
+
+function createStructuredThreadRecord(card, thread) {
+  const threadId = getThreadIdForCard(card, thread);
+
+  if (!threadId || !thread) {
+    return null;
+  }
+
+  return {
+    threadId,
+    type: thread.type || null,
+    merchant: thread.merchant?.merchantName
+      ? {
+          merchantName: thread.merchant.merchantName
+        }
+      : null,
+    linkHost: thread.linkHost || "",
+    mainGroup: thread.mainGroup?.threadGroupName
+      ? {
+          threadGroupName: thread.mainGroup.threadGroupName,
+          threadGroupUrlName: thread.mainGroup.threadGroupUrlName || ""
+        }
+      : null,
+    temperature: thread.temperature ?? null
+  };
+}
+
+function mergeThreadDataRecords(previousRecord, nextRecord) {
+  if (!previousRecord) {
+    return nextRecord || null;
+  }
+
+  if (!nextRecord) {
+    return previousRecord;
+  }
+
+  return {
+    threadId: nextRecord.threadId || previousRecord.threadId || "",
+    type: nextRecord.type || previousRecord.type || null,
+    merchant: nextRecord.merchant?.merchantName
+      ? nextRecord.merchant
+      : previousRecord.merchant,
+    linkHost: nextRecord.linkHost || previousRecord.linkHost || "",
+    mainGroup: nextRecord.mainGroup?.threadGroupName
+      ? nextRecord.mainGroup
+      : previousRecord.mainGroup,
+    temperature:
+      nextRecord.temperature === null || nextRecord.temperature === undefined
+        ? previousRecord.temperature ?? null
+        : nextRecord.temperature
+  };
+}
+
 function getThreadDataFromElement(element) {
   const candidates = [
     element,
@@ -424,6 +652,35 @@ function getThreadDataFromElement(element) {
   return null;
 }
 
+function cacheStructuredThreadData(card, thread) {
+  const nextRecord = createStructuredThreadRecord(card, thread);
+
+  if (!nextRecord?.threadId) {
+    return;
+  }
+
+  if (threadDataCache.size >= THREAD_DATA_CACHE_MAX_SIZE) {
+    const firstKey = threadDataCache.keys().next().value;
+    threadDataCache.delete(firstKey);
+  }
+
+  const previousRecord = threadDataCache.get(nextRecord.threadId) || null;
+  threadDataCache.set(
+    nextRecord.threadId,
+    mergeThreadDataRecords(previousRecord, nextRecord)
+  );
+}
+
+function getCachedThreadDataForCard(card) {
+  const threadId = getThreadIdForCard(card);
+
+  if (!threadId) {
+    return null;
+  }
+
+  return threadDataCache.get(threadId) || null;
+}
+
 function cleanMerchantCandidate(value) {
   return normalizeStoreName(value)
     .replace(
@@ -438,14 +695,14 @@ function cleanMerchantCandidate(value) {
       /\s*(?:Pobierz\s+kod.*|Pobierz.*|Kod.*|Id\S*\s+do\s+okazji.*|Przejd\S*.*|Zobacz.*|Otw\S*.*)$/i,
       ""
     )
-    .replace(/[^\p{L}\p{N}\s.&'’+-]+$/u, "")
+    .replace(/[^\p{L}\p{N}\s.&'+-]+$/u, "")
     .trim();
 }
 
 function getMerchantNameFromCardText(card) {
   const text = normalizeStoreName(card?.textContent);
   const match = text.match(
-    /(?:Dostępne\s+w|Zrealizuj\s+na)\s+(.+?)(?:\s*Dodane|\s*Dodał|\s*Opublikowane|\s+przez|\s*Idź\s+do\s+okazji|\s*Przejdź|\s*Zobacz|\s*Otwórz|$)/i
+    /(?:Dost\S*\s+w|Zrealizuj\s+na)\s+(.+?)(?:\s*Dodane|\s*Doda\S*|\s*Opublikowane|\s+przez|\s*Id\S*\s+do\s+okazji|\s*Przejd\S*|\s*Zobacz|\s*Otw\S*|$)/i
   );
 
   if (!match) {
@@ -471,24 +728,42 @@ function getTemperatureFromCardText(card) {
 }
 
 function createItemFromThread(card, normalizer, thread) {
+  const hasStructuredNormalizer = Boolean(normalizer && normalizer !== card);
   const merchantName =
     normalizeStoreName(thread?.merchant?.merchantName) ||
     normalizeLinkHostName(thread?.linkHost) ||
     getMerchantNameFromCardText(card);
+  const categoryName = normalizeStoreName(thread?.mainGroup?.threadGroupName);
   const temperature =
     normalizeDealTemperature(thread?.temperature) ??
     getTemperatureFromCardText(card);
 
-  if (!merchantName || thread?.type === "Discussion") {
+  if (thread?.type === "Discussion") {
+    return null;
+  }
+
+  if (hasStructuredNormalizer && !thread) {
+    return null;
+  }
+
+  if (!merchantName && !categoryName) {
     return null;
   }
 
   return {
     normalizer,
     card,
-    merchant: {
-      name: merchantName
-    },
+    merchant: merchantName
+      ? {
+          name: merchantName
+        }
+      : null,
+    category: categoryName
+      ? {
+          name: categoryName,
+          slug: normalizeStoreName(thread?.mainGroup?.threadGroupUrlName)
+        }
+      : null,
     temperature
   };
 }
@@ -496,11 +771,25 @@ function createItemFromThread(card, normalizer, thread) {
 function getNormalizerItems() {
   const items = [];
   const seenCards = new Set();
+  const cardsWithStructuredNormalizers = new Set();
 
   for (const normalizer of document.querySelectorAll(NORMALIZER_SELECTOR)) {
     const card = getCardFromNormalizer(normalizer);
+
+    if (card) {
+      cardsWithStructuredNormalizers.add(card);
+    }
+
     const thread = getThreadDataFromElement(normalizer);
-    const item = card ? createItemFromThread(card, normalizer, thread) : null;
+    cacheStructuredThreadData(card, thread);
+    const cachedThread = card ? getCachedThreadDataForCard(card) : null;
+    const resolvedThread = mergeThreadDataRecords(
+      cachedThread,
+      createStructuredThreadRecord(card, thread)
+    );
+    const item = card
+      ? createItemFromThread(card, normalizer, resolvedThread)
+      : null;
 
     if (item) {
       items.push(item);
@@ -509,12 +798,15 @@ function getNormalizerItems() {
   }
 
   for (const card of document.querySelectorAll(CARD_SELECTOR)) {
-    if (seenCards.has(card)) {
+    if (seenCards.has(card) || cardsWithStructuredNormalizers.has(card)) {
       continue;
     }
 
     const normalizer = card.querySelector?.(NORMALIZER_SELECTOR) || card;
-    const thread = getThreadDataFromElement(card);
+    const thread = mergeThreadDataRecords(
+      getCachedThreadDataForCard(card),
+      createStructuredThreadRecord(card, getThreadDataFromElement(card))
+    );
     const item = createItemFromThread(card, normalizer, thread);
 
     if (item) {
@@ -526,11 +818,28 @@ function getNormalizerItems() {
   return items;
 }
 
+function warmStructuredThreadCache() {
+  for (const normalizer of document.querySelectorAll(NORMALIZER_SELECTOR)) {
+    const card = getCardFromNormalizer(normalizer);
+    const thread = getThreadDataFromElement(normalizer);
+
+    cacheStructuredThreadData(card, thread);
+  }
+}
+
 function isStoreHidden(storeName) {
   const normalizedStoreName = normalizeText(storeName);
 
   return hiddenStores.some((hiddenStore) => {
     return normalizeText(hiddenStore) === normalizedStoreName;
+  });
+}
+
+function isCategoryHidden(categoryName) {
+  const normalizedCategoryName = normalizeText(categoryName);
+
+  return hiddenCategories.some((hiddenCategory) => {
+    return normalizeText(hiddenCategory) === normalizedCategoryName;
   });
 }
 
@@ -565,15 +874,19 @@ function createDimmedNotice({ badgeText, noticeKey, merchant = null, onRemove = 
   if (onRemove && merchant) {
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = "Remove filter";
-    button.title = `Remove filter for ${merchant.name}`;
+    button.textContent = t("removeFilterAction");
+    button.title = t("removeFilterActionTitle", { name: merchant.name });
 
     button.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
 
-      await onRemove();
+      try {
+        await onRemove();
+      } catch (error) {
+        debugLog("Error removing filter", error);
+      }
     });
 
     notice.appendChild(button);
@@ -583,12 +896,6 @@ function createDimmedNotice({ badgeText, noticeKey, merchant = null, onRemove = 
 }
 
 function ensureDimmedNotice(card, config) {
-  const existingNotice = card.querySelector?.(DIMMED_NOTICE_SELECTOR);
-
-  if (existingNotice?.dataset?.noticeKey === config.noticeKey) {
-    return;
-  }
-
   removeDimmedNotice(card);
 
   const notice = createDimmedNotice(config);
@@ -627,7 +934,7 @@ function hideCard(card) {
 
 function getStoreDimmedNoticeConfig(merchant) {
   return {
-    badgeText: `${PLUGIN_NAME}: Filtered by store filter`,
+    badgeText: t("dimmedStoreNotice", { pluginName: PLUGIN_NAME }),
     noticeKey: `store:${normalizeText(merchant.name)}`,
     merchant,
     onRemove: async () => {
@@ -637,10 +944,25 @@ function getStoreDimmedNoticeConfig(merchant) {
   };
 }
 
+function getCategoryDimmedNoticeConfig(category) {
+  return {
+    badgeText: t("dimmedCategoryNotice", { pluginName: PLUGIN_NAME }),
+    noticeKey: `category:${normalizeText(category.name)}`,
+    merchant: category,
+    onRemove: async () => {
+      hiddenCategories = await removeHiddenCategory(category.name);
+      applyFilters();
+    }
+  };
+}
+
 function getThresholdDimmedNoticeConfig() {
   const thresholdLabel = hideUnfilteredThreshold === null
-    ? `${PLUGIN_NAME}: Filtered by threshold`
-    : `${PLUGIN_NAME}: Filtered by threshold < ${hideUnfilteredThreshold}\u00B0`;
+    ? t("dimmedThresholdNotice", { pluginName: PLUGIN_NAME })
+    : t("dimmedThresholdNoticeWithValue", {
+        pluginName: PLUGIN_NAME,
+        value: hideUnfilteredThreshold
+      });
 
   return {
     badgeText: thresholdLabel,
@@ -702,48 +1024,154 @@ async function saveHiddenStore(storeName) {
   return setStoredHiddenStores([...currentStores, cleanedStoreName]);
 }
 
-function createFilterButton(merchant) {
+async function saveHiddenCategory(categoryName) {
+  const cleanedCategoryName = normalizeStoreName(categoryName);
+
+  if (!cleanedCategoryName) {
+    return hiddenCategories;
+  }
+
+  const currentCategories = await getStoredHiddenCategories();
+  const alreadyExists = currentCategories.some((item) => {
+    return normalizeText(item) === normalizeText(cleanedCategoryName);
+  });
+
+  if (alreadyExists) {
+    return currentCategories;
+  }
+
+  return setStoredHiddenCategories([...currentCategories, cleanedCategoryName]);
+}
+
+function configureStoreFilterButton(button, merchant) {
+  button.type = "button";
+  button.className = "pepper-store-filter-button pepper-store-filter-button-store";
+  button.textContent = t("filterStoreButton", { name: merchant.name });
+  button.title = t("filterStoreButtonTitle", { name: merchant.name });
+}
+
+function createStoreFilterButton(merchant) {
   const button = document.createElement("button");
 
-  button.type = "button";
-  button.className = "pepper-store-filter-button";
-  button.textContent = `Filtruj sklep: ${merchant.name}`;
-  button.title = `Ukryj oferty ze sklepu: ${merchant.name}`;
+  configureStoreFilterButton(button, merchant);
 
   button.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
 
-    const shouldAddStore = await showConfirmModal(
-      `Do you want to add ${merchant.name} to the filtered stores?`,
-      "Add filter",
-      "Cancel"
-    );
+    try {
+      const shouldAddStore = await showConfirmModal(
+        t("addStoreConfirm", { name: merchant.name }),
+        "Add filter",
+        "Cancel"
+      );
 
-    if (!shouldAddStore) {
-      return;
+      if (!shouldAddStore) {
+        return;
+      }
+
+      hiddenStores = await saveHiddenStore(merchant.name);
+      applyFilters();
+    } catch (error) {
+      debugLog("Error adding store filter", error);
     }
-
-    hiddenStores = await saveHiddenStore(merchant.name);
-    applyFilters();
   });
 
   return button;
 }
 
-function addFilterButton(item) {
-  if (item.card.querySelector(BUTTON_SELECTOR)) {
-    return;
+function configureCategoryFilterButton(button, category) {
+  button.type = "button";
+  button.className = "pepper-store-filter-button pepper-store-filter-button-category";
+  button.title = t("filterCategoryButtonTitle", { name: category.name });
+  button.textContent = t("filterCategoryButton", { name: category.name });
+}
+
+function createCategoryFilterButton(category) {
+  const button = document.createElement("button");
+
+  configureCategoryFilterButton(button, category);
+
+  button.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+
+    try {
+      const shouldAddCategory = window.confirm(
+        t("addCategoryConfirm", { name: category.name })
+      );
+
+      if (!shouldAddCategory) {
+        return;
+      }
+
+      hiddenCategories = await saveHiddenCategory(category.name);
+      applyFilters();
+    } catch (error) {
+      debugLog("Error adding category filter", error);
+    }
+  });
+
+  return button;
+}
+
+function createFilterButton(merchant) {
+  return createStoreFilterButton(merchant);
+}
+
+function ensureStoreFilterButton(wrapper, merchant) {
+  const existingButton = wrapper.querySelector?.(".pepper-store-filter-button-store");
+
+  if (existingButton) {
+    configureStoreFilterButton(existingButton, merchant);
+    return existingButton;
   }
 
+  const button = createStoreFilterButton(merchant);
+  wrapper.appendChild(button);
+  return button;
+}
+
+function ensureCategoryFilterButton(wrapper, category) {
+  const existingButton = wrapper.querySelector?.(".pepper-store-filter-button-category");
+
+  if (existingButton) {
+    configureCategoryFilterButton(existingButton, category);
+    return existingButton;
+  }
+
+  const button = createCategoryFilterButton(category);
+  wrapper.appendChild(button);
+  return button;
+}
+
+function addFilterButton(item) {
+  const existingWrapper = item.card.querySelector(FILTER_WRAPPER_SELECTOR);
+  const hasStoreButton = Boolean(
+    existingWrapper?.querySelector?.(".pepper-store-filter-button-store")
+  );
+  const hasCategoryButton = Boolean(
+    existingWrapper?.querySelector?.(".pepper-store-filter-button-category")
+  );
   const body = item.card.querySelector(".threadListCard-body");
   const target = body || item.card.querySelector(".thread-title") || item.normalizer;
   const beforeElement = body?.querySelector(".userHtml");
-  const wrapper = document.createElement("div");
+  const wrapper = existingWrapper || document.createElement("div");
 
   wrapper.className = "pepper-store-filter-wrapper";
-  wrapper.appendChild(createFilterButton(item.merchant));
+  if (item.merchant) {
+    ensureStoreFilterButton(wrapper, item.merchant);
+  }
+
+  if (item.category) {
+    ensureCategoryFilterButton(wrapper, item.category);
+  }
+
+  if (existingWrapper) {
+    return;
+  }
 
   if (beforeElement) {
     beforeElement.insertAdjacentElement("beforebegin", wrapper);
@@ -778,10 +1206,10 @@ function applyFilters() {
   let addedButtonsCount = 0;
 
   for (const item of items) {
-    const hadButton = Boolean(item.card.querySelector(BUTTON_SELECTOR));
+    const hadButton = Boolean(item.card.querySelector(FILTER_BUTTON_SELECTOR));
     addFilterButton(item);
 
-    if (!hadButton && item.card.querySelector(BUTTON_SELECTOR)) {
+    if (!hadButton && item.card.querySelector(FILTER_BUTTON_SELECTOR)) {
       addedButtonsCount += 1;
     }
 
@@ -790,9 +1218,15 @@ function applyFilters() {
       continue;
     }
 
-    const isFilteredStore = isStoreHidden(item.merchant.name);
+    const isFilteredStore = item.merchant ? isStoreHidden(item.merchant.name) : false;
+    const isFilteredCategory =
+      categoryFiltersEnabled &&
+      Boolean(item.category?.name) &&
+      isCategoryHidden(item.category.name);
+    const isFilteredItem = isFilteredStore || isFilteredCategory;
     const shouldShowFilteredStore =
       isFilteredStore &&
+      !isFilteredCategory &&
       showFilteredAboveThreshold &&
       isTemperatureAtOrAboveThreshold(item.temperature);
     const shouldHideBelowThreshold =
@@ -815,9 +1249,14 @@ function applyFilters() {
       continue;
     }
 
-    if (isFilteredStore) {
+    if (isFilteredItem) {
       if (showFilteredAsDimmed) {
-        dimCard(item.card, getStoreDimmedNoticeConfig(item.merchant));
+        dimCard(
+          item.card,
+          isFilteredCategory
+            ? getCategoryDimmedNoticeConfig(item.category)
+            : getStoreDimmedNoticeConfig(item.merchant)
+        );
       } else {
         hideCard(item.card);
       }
@@ -829,11 +1268,17 @@ function applyFilters() {
     showCard(item.card);
   }
 
-  const merchantNames = Array.from(new Set(items.map((item) => item.merchant.name)));
+  const merchantNames = Array.from(
+    new Set(items.map((item) => item.merchant?.name).filter(Boolean))
+  );
+  const categoryNames = Array.from(
+    new Set(items.map((item) => item.category?.name).filter(Boolean))
+  );
   const debugSignature = JSON.stringify({
     items: items.length,
     hidden: hiddenCount,
     filtersEnabled,
+    categoryFiltersEnabled,
     showFilteredAsDimmed,
     showBelowThresholdAsDimmed,
     showFilteredAboveThreshold,
@@ -841,7 +1286,9 @@ function applyFilters() {
     showFilteredThreshold,
     hideUnfilteredThreshold,
     stores: hiddenStores,
-    merchants: merchantNames.slice(0, 10)
+    categories: hiddenCategories,
+    merchants: merchantNames.slice(0, 10),
+    visibleCategories: categoryNames.slice(0, 10)
   });
 
   if (debugSignature !== lastDebugSignature) {
@@ -852,6 +1299,7 @@ function applyFilters() {
       addedButtons: addedButtonsCount,
       hiddenOffers: hiddenCount,
       filtersEnabled,
+      categoryFiltersEnabled,
       showFilteredAsDimmed,
       showBelowThresholdAsDimmed,
       showFilteredAboveThreshold,
@@ -859,7 +1307,9 @@ function applyFilters() {
       showFilteredThreshold,
       hideUnfilteredThreshold,
       hiddenStores,
-      sampleMerchants: merchantNames.slice(0, 10)
+      hiddenCategories,
+      sampleMerchants: merchantNames.slice(0, 10),
+      sampleCategories: categoryNames.slice(0, 10)
     });
   }
 }
@@ -890,6 +1340,8 @@ function injectStyles() {
     .pepper-store-filter-wrapper {
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
       margin-top: 8px;
       margin-bottom: 2px;
     }
@@ -1120,24 +1572,32 @@ function injectStyles() {
 }
 
 async function refreshStateFromStorage(resetFiltersForPage = false) {
-  let settings = await getSettings();
+  try {
+    let settings = await getSettings();
 
-  if (resetFiltersForPage && settings.alwaysFilterOnPageOpen && !settings.filtersEnabled) {
-    settings = await saveSettings({
-      ...settings,
-      filtersEnabled: true
-    });
+    if (resetFiltersForPage && settings.alwaysFilterOnPageOpen && !settings.filtersEnabled) {
+      settings = await saveSettings({
+        ...settings,
+        filtersEnabled: true
+      });
+    }
+
+    filtersEnabled = settings.filtersEnabled;
+    categoryFiltersEnabled = settings.categoryFiltersEnabled;
+    showFilteredAsDimmed = settings.showFilteredAsDimmed;
+    showBelowThresholdAsDimmed = settings.showBelowThresholdAsDimmed;
+    showFilteredAboveThreshold = settings.showFilteredAboveThreshold;
+    hideUnfilteredBelowThreshold = settings.hideUnfilteredBelowThreshold;
+    showFilteredThreshold = settings.showFilteredThreshold;
+    hideUnfilteredThreshold = settings.hideUnfilteredThreshold;
+    currentUiLanguage = resolvePageUiLanguage(settings);
+    hiddenStores = await getStoredHiddenStores(settings);
+    hiddenCategories = await getStoredHiddenCategories(settings);
+    applyFilters();
+  } catch (error) {
+    debugLog("Error refreshing filter state from storage", error);
+    throw error;
   }
-
-  filtersEnabled = settings.filtersEnabled;
-  showFilteredAsDimmed = settings.showFilteredAsDimmed;
-  showBelowThresholdAsDimmed = settings.showBelowThresholdAsDimmed;
-  showFilteredAboveThreshold = settings.showFilteredAboveThreshold;
-  hideUnfilteredBelowThreshold = settings.hideUnfilteredBelowThreshold;
-  showFilteredThreshold = settings.showFilteredThreshold;
-  hideUnfilteredThreshold = settings.hideUnfilteredThreshold;
-  hiddenStores = await getStoredHiddenStores(settings);
-  applyFilters();
 }
 
 async function loadHiddenStores() {
@@ -1148,70 +1608,104 @@ async function loadHiddenStores() {
 
   try {
     await refreshStateFromStorage(true);
+    scheduleFollowUpScans();
   } finally {
     setInitialLoadingState(false);
   }
 }
 
 function observePageChanges() {
-  if (!document.body) {
+  const observerTarget = document.body || document.documentElement;
+
+  if (!observerTarget) {
     return;
   }
 
   let debounceTimer = null;
+  let observer = null;
 
-  const observer = new MutationObserver(() => {
+  const cleanup = () => {
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
+    window.removeEventListener?.("scroll", scheduleFollowUpScans);
+    clearTimeout(debounceTimer);
+  };
+
+  cleanup();
+
+  observer = new MutationObserver(() => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(scheduleFollowUpScans, 150);
   });
 
-  observer.observe(document.body, {
+  observer.observe(observerTarget, {
     childList: true,
-    subtree: true
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["data-vue3", "aria-busy", "class"]
   });
 
   window.addEventListener("scroll", scheduleFollowUpScans, {
     passive: true
   });
-
-  document.addEventListener?.("scroll", scheduleFollowUpScans, true);
 }
 
 browser.storage.onChanged.addListener((changes, areaName) => {
   const storesChanged =
     ["sync", "local"].includes(areaName) && Boolean(changes[STORAGE_KEY]);
+  const categoriesChanged =
+    ["sync", "local"].includes(areaName) && Boolean(changes[CATEGORY_STORAGE_KEY]);
   const settingsChanged = areaName === "local" && Boolean(changes[SETTINGS_KEY]);
 
-  if (!storesChanged && !settingsChanged) {
+  if (!storesChanged && !categoriesChanged && !settingsChanged) {
     return;
   }
 
-  refreshStateFromStorage().then(() => {
-    debugLog("Filter state changed", {
-      filtersEnabled,
-      showFilteredAsDimmed,
-      showFilteredAboveThreshold,
-      hideUnfilteredBelowThreshold,
-      showFilteredThreshold,
-      hideUnfilteredThreshold,
-      hiddenStores
+  refreshStateFromStorage()
+    .then(() => {
+      debugLog("Filter state changed", {
+        filtersEnabled,
+        showFilteredAsDimmed,
+        showFilteredAboveThreshold,
+        hideUnfilteredBelowThreshold,
+        showFilteredThreshold,
+        hideUnfilteredThreshold,
+        hiddenStores,
+        hiddenCategories,
+        categoryFiltersEnabled
+      });
+    })
+    .catch((error) => {
+      debugLog("Error refreshing filter state on storage change", error);
     });
-  });
 });
 
 browser.runtime?.onMessage?.addListener((message) => {
-  if (message?.type !== "dealStoreFilterRefresh") {
-    return undefined;
+  if (message?.type === "dealStoreFilterGetPageLanguage") {
+    return Promise.resolve({
+      pageLanguage: getPageLanguage(),
+      uiLanguage: resolvePageUiLanguage()
+    });
   }
 
-  return refreshStateFromStorage();
+  if (message?.type === "dealStoreFilterRefresh") {
+    return refreshStateFromStorage().catch((error) => {
+      debugLog("Error refreshing filters on message", error);
+      throw error;
+    });
+  }
+
+  return undefined;
 });
 
 setInitialLoadingState(true);
 injectStyles();
+warmStructuredThreadCache();
 loadHiddenStores();
 
-if (document.body) {
+if (document.body || document.documentElement) {
   observePageChanges();
 } else {
   window.addEventListener("DOMContentLoaded", observePageChanges, { once: true });
