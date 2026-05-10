@@ -262,6 +262,7 @@ function getCurrentBrowserLanguages() {
 }
 
 function setStatus(message, isWarning = false) {
+  if (!statusText) return;
   statusText.textContent = message;
   statusText.classList.toggle("warning", isWarning);
 }
@@ -351,35 +352,41 @@ async function applyPopupTranslations(settings = latestSettings) {
 
   document.documentElement.lang = currentUiLanguage;
   document.title = t("appTitle");
-  mainTitle.textContent = t("appTitle");
-  syncBadge.textContent = t("firefoxSyncBadge");
-  settingsToggle.title = t("settingsTitle");
-  settingsToggle.setAttribute("aria-label", t("settingsTitle"));
-  settingsBack.title = t("backButtonTitle");
-  settingsBack.setAttribute("aria-label", t("backButtonTitle"));
-  settingsTitle.textContent = t("settingsTitle");
-  filterTabs.setAttribute("aria-label", t("filterTypeLabel"));
-  shopsTabButton.textContent = t("shopsTab");
-  categoriesTabButton.textContent = t("categoriesTab");
-  uiLanguageLabel.textContent = t("languageLabel");
-  firefoxSyncLabel.textContent = t("firefoxSyncLabel");
-  firefoxSyncHint.textContent = t("firefoxSyncHint");
-  alwaysFilterOnOpenLabel.textContent = t("alwaysFilterOnOpenLabel");
-  categoryFiltersEnabledLabel.textContent = t("categoryFiltersEnabledLabel");
-  showFilteredAsDimmedLabel.textContent = t("showFilteredAsDimmedLabel");
-  showFilteredAboveThresholdLabel.textContent = t("showFilteredAboveThresholdLabel");
-  showFilteredThresholdLabel.textContent = t("showFilteredThresholdLabel");
-  hideUnfilteredBelowThresholdLabel.textContent = t("hideUnfilteredBelowThresholdLabel");
-  hideUnfilteredThresholdLabel.textContent = t("hideUnfilteredThresholdLabel");
-  showBelowThresholdAsDimmedLabel.textContent = t("showBelowThresholdAsDimmedLabel");
+  if (mainTitle) mainTitle.textContent = t("appTitle");
+  if (syncBadge) syncBadge.textContent = t("firefoxSyncBadge");
+  if (settingsToggle) {
+    settingsToggle.title = t("settingsTitle");
+    settingsToggle.setAttribute("aria-label", t("settingsTitle"));
+  }
+  if (settingsBack) {
+    settingsBack.title = t("backButtonTitle");
+    settingsBack.setAttribute("aria-label", t("backButtonTitle"));
+  }
+  if (settingsTitle) settingsTitle.textContent = t("settingsTitle");
+  if (filterTabs) filterTabs.setAttribute("aria-label", t("filterTypeLabel"));
+  if (shopsTabButton) shopsTabButton.textContent = t("shopsTab");
+  if (categoriesTabButton) categoriesTabButton.textContent = t("categoriesTab");
+  if (uiLanguageLabel) uiLanguageLabel.textContent = t("languageLabel");
+  if (firefoxSyncLabel) firefoxSyncLabel.textContent = t("firefoxSyncLabel");
+  if (firefoxSyncHint) firefoxSyncHint.textContent = t("firefoxSyncHint");
+  if (alwaysFilterOnOpenLabel) alwaysFilterOnOpenLabel.textContent = t("alwaysFilterOnOpenLabel");
+  if (categoryFiltersEnabledLabel) categoryFiltersEnabledLabel.textContent = t("categoryFiltersEnabledLabel");
+  if (showFilteredAsDimmedLabel) showFilteredAsDimmedLabel.textContent = t("showFilteredAsDimmedLabel");
+  if (showFilteredAboveThresholdLabel) showFilteredAboveThresholdLabel.textContent = t("showFilteredAboveThresholdLabel");
+  if (showFilteredThresholdLabel) showFilteredThresholdLabel.textContent = t("showFilteredThresholdLabel");
+  if (hideUnfilteredBelowThresholdLabel) hideUnfilteredBelowThresholdLabel.textContent = t("hideUnfilteredBelowThresholdLabel");
+  if (hideUnfilteredThresholdLabel) hideUnfilteredThresholdLabel.textContent = t("hideUnfilteredThresholdLabel");
+  if (showBelowThresholdAsDimmedLabel) showBelowThresholdAsDimmedLabel.textContent = t("showBelowThresholdAsDimmedLabel");
 
-  for (const option of uiLanguageSelect.options) {
-    if (option.value === "auto") {
-      option.textContent = t("languageAuto");
-    } else if (option.value === "pl") {
-      option.textContent = t("languagePolish");
-    } else if (option.value === "en") {
-      option.textContent = t("languageEnglish");
+  if (uiLanguageSelect) {
+    for (const option of uiLanguageSelect.options) {
+      if (option.value === "auto") {
+        option.textContent = t("languageAuto");
+      } else if (option.value === "pl") {
+        option.textContent = t("languagePolish");
+      } else if (option.value === "en") {
+        option.textContent = t("languageEnglish");
+      }
     }
   }
 }
@@ -815,7 +822,9 @@ browser.storage.onChanged.addListener((changes, areaName) => {
     return;
   }
 
-  refreshPopup();
+  refreshPopup().catch((error) => {
+    console.error("[Deal Store Filter] Error refreshing popup", error);
+  });
 });
 
 refreshPopup()

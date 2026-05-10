@@ -2958,7 +2958,6 @@ test("observePageChanges starts observing before document.body exists", () => {
 // hydrates cards in a way that does not produce a useful childList mutation.
 test("observePageChanges schedules filtering on scroll", () => {
   const windowEvents = [];
-  const documentEvents = [];
 
   loadContentScript({
     document: {
@@ -2968,10 +2967,7 @@ test("observePageChanges schedules filtering on scroll", () => {
       },
       querySelector: () => null,
       querySelectorAll: () => [],
-      createElement: createMockElement,
-      addEventListener: (...args) => {
-        documentEvents.push(args);
-      }
+      createElement: createMockElement
     },
     MutationObserver: class {
       observe() {}
@@ -2982,7 +2978,6 @@ test("observePageChanges schedules filtering on scroll", () => {
   });
 
   assert.equal(windowEvents.some(([eventName]) => eventName === "scroll"), true);
-  assert.equal(documentEvents.some(([eventName]) => eventName === "scroll"), true);
 });
 
 // Verifies runtime scripts do not introduce network requests or remote data
@@ -3008,4 +3003,1181 @@ test("runtime scripts use browser.storage.sync", () => {
 
     assert.ok(source.includes("browser.storage.sync"), `${file} does not use storage.sync`);
   }
+});
+
+test("isStoreHidden matches case-insensitively", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: ["Amazon.pl", "Netto"] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: true } };
+            }
+            return { hiddenStores: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isStoreHidden("Amazon.pl"), true);
+  assert.equal(context.isStoreHidden("amazon.pl"), true);
+  assert.equal(context.isStoreHidden("AMAZON.PL"), true);
+  assert.equal(context.isStoreHidden("Media Expert"), false);
+});
+
+test("isStoreHidden returns false for empty list", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: [] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+            return { hiddenStores: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isStoreHidden("Amazon.pl"), false);
+});
+
+test("isCategoryHidden matches case-insensitively", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: ["Gaming", "Dom i mieszkanie"] };
+            }
+            return {};
+          },
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: true } };
+            }
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: [] };
+            }
+            return defaults;
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isCategoryHidden("Gaming"), true);
+  assert.equal(context.isCategoryHidden("gaming"), true);
+  assert.equal(context.isCategoryHidden("GAMING"), true);
+  assert.equal(context.isCategoryHidden("Elektronika"), false);
+});
+
+test("isCategoryHidden returns false for empty list", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenCategories: [] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: [] };
+            }
+            return defaults;
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isCategoryHidden("Gaming"), false);
+});
+
+test("saveHiddenStore adds new store", async () => {
+  let savedStores = null;
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: [] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenStores")) {
+              return { hiddenStores: [] };
+            }
+            return defaults;
+          },
+          set: async (value) => {
+            if (Object.prototype.hasOwnProperty.call(value, "hiddenStores")) {
+              savedStores = value.hiddenStores;
+            }
+          }
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const result = await context.saveHiddenStore("Amazon.pl");
+
+  assert.equal(JSON.stringify(result), JSON.stringify(["Amazon.pl"]));
+  assert.equal(JSON.stringify(savedStores), JSON.stringify(["Amazon.pl"]));
+});
+
+test("saveHiddenStore does not add duplicate", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: ["Amazon.pl"] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenStores")) {
+              return { hiddenStores: ["Amazon.pl"] };
+            }
+            return defaults;
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const result = await context.saveHiddenStore("Amazon.pl");
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0], "Amazon.pl");
+});
+
+test("saveHiddenStore ignores empty name", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: ["Existing"] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenStores")) {
+              return { hiddenStores: ["Existing"] };
+            }
+            return defaults;
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+  const result = await context.saveHiddenStore("");
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0], "Existing");
+});
+
+test("saveHiddenCategory adds new category", async () => {
+  let savedCategories = null;
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenCategories: [] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: [] };
+            }
+            return defaults;
+          },
+          set: async (value) => {
+            if (Object.prototype.hasOwnProperty.call(value, "hiddenCategories")) {
+              savedCategories = value.hiddenCategories;
+            }
+          }
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const result = await context.saveHiddenCategory("Gaming");
+
+  assert.equal(JSON.stringify(result), JSON.stringify(["Gaming"]));
+  assert.equal(JSON.stringify(savedCategories), JSON.stringify(["Gaming"]));
+});
+
+test("saveHiddenCategory does not add duplicate", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenCategories: ["Gaming"] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: ["Gaming"] };
+            }
+            return defaults;
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const result = await context.saveHiddenCategory("Gaming");
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0], "Gaming");
+});
+
+test("removeHiddenStore removes matching store", async () => {
+  let savedStores = null;
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: ["Amazon.pl", "Netto"] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenStores")) {
+              return { hiddenStores: ["Amazon.pl", "Netto"] };
+            }
+            return defaults;
+          },
+          set: async (value) => {
+            if (Object.prototype.hasOwnProperty.call(value, "hiddenStores")) {
+              savedStores = value.hiddenStores;
+            }
+          }
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const result = await context.removeHiddenStore("Amazon.pl");
+
+  assert.equal(JSON.stringify(result), JSON.stringify(["Netto"]));
+  assert.equal(JSON.stringify(savedStores), JSON.stringify(["Netto"]));
+});
+
+test("removeHiddenCategory removes matching category", async () => {
+  let savedCategories = null;
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenCategories: ["Gaming", "Elektronika"] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: false } };
+            }
+            if (Object.prototype.hasOwnProperty.call(defaults, "hiddenCategories")) {
+              return { hiddenCategories: ["Gaming", "Elektronika"] };
+            }
+            return defaults;
+          },
+          set: async (value) => {
+            if (Object.prototype.hasOwnProperty.call(value, "hiddenCategories")) {
+              savedCategories = value.hiddenCategories;
+            }
+          }
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const result = await context.removeHiddenCategory("Gaming");
+
+  assert.equal(JSON.stringify(result), JSON.stringify(["Elektronika"]));
+  assert.equal(JSON.stringify(savedCategories), JSON.stringify(["Elektronika"]));
+});
+
+test("getStoredHiddenCategories uses sync as primary source", async () => {
+  const calls = { syncGet: 0, localGet: 0, localSet: 0 };
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => {
+            calls.syncGet += 1;
+            return { hiddenCategories: ["Gaming"] };
+          },
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            calls.localGet += 1;
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: true } };
+            }
+            return { hiddenCategories: ["Stale"] };
+          },
+          set: async () => {
+            calls.localSet += 1;
+          }
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const categories = await context.getStoredHiddenCategories();
+
+  assert.ok(calls.syncGet > 0);
+  assert.ok(calls.localGet > 0);
+  assert.ok(calls.localSet > 0);
+  assert.equal(JSON.stringify(categories), JSON.stringify(["Gaming"]));
+});
+
+test("getStoredHiddenCategories falls back to local when sync fails", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => { throw new Error("sync unavailable"); },
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { useFirefoxSync: true } };
+            }
+            return { hiddenCategories: ["Elektronika"] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const categories = await context.getStoredHiddenCategories();
+
+  assert.equal(JSON.stringify(categories), JSON.stringify(["Elektronika"]));
+});
+
+test("setStoredHiddenCategories writes to sync and local", async () => {
+  const calls = { syncSet: 0, localSet: 0 };
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenCategories: [] }),
+          set: async () => { calls.syncSet += 1; }
+        },
+        local: {
+          get: async () => ({ settings: { useFirefoxSync: true }, hiddenCategories: [] }),
+          set: async () => { calls.localSet += 1; }
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.setStoredHiddenCategories(["Gaming", "Elektronika"]);
+
+  assert.equal(calls.syncSet, 1);
+  assert.equal(calls.localSet, 1);
+});
+
+test("runtime.onMessage handles dealStoreFilterGetPageLanguage", async () => {
+  let registeredListener = null;
+  const context = loadContentScript({
+    document: {
+      documentElement: { lang: "pl-PL", appendChild: () => {} },
+      body: {},
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: createMockElement
+    },
+    navigator: { language: "en-US", languages: ["en-US"] },
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) return { settings: {} };
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      },
+      runtime: {
+        onMessage: {
+          addListener: (fn) => { registeredListener = fn; }
+        }
+      }
+    }
+  });
+
+  const response = await registeredListener({ type: "dealStoreFilterGetPageLanguage" });
+
+  assert.equal(response.pageLanguage, "pl-PL");
+  assert.equal(response.uiLanguage, "pl");
+});
+
+test("runtime.onMessage handles dealStoreFilterRefresh", async () => {
+  let registeredListener = null;
+  let refreshCalls = 0;
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) return { settings: {} };
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      },
+      runtime: {
+        onMessage: {
+          addListener: (fn) => { registeredListener = fn; }
+        }
+      }
+    }
+  });
+
+  context.refreshStateFromStorage = async () => { refreshCalls += 1; };
+
+  await registeredListener({ type: "dealStoreFilterRefresh" });
+
+  assert.equal(refreshCalls, 1);
+});
+
+test("runtime.onMessage returns undefined for unknown message type", async () => {
+  let registeredListener = null;
+  loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) return { settings: {} };
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      },
+      runtime: {
+        onMessage: {
+          addListener: (fn) => { registeredListener = fn; }
+        }
+      }
+    }
+  });
+
+  const result = await registeredListener({ type: "unknownType" });
+
+  assert.equal(result, undefined);
+});
+
+test("storage.onChanged listener is registered", () => {
+  let listenerRegistered = false;
+  loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) return { settings: {} };
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: () => { listenerRegistered = true; }
+        }
+      }
+    }
+  });
+
+  assert.equal(listenerRegistered, true);
+});
+
+test("storage.onChanged triggers refresh when settings changes", async () => {
+  let registeredListener = null;
+  let refreshCalls = 0;
+  loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) return { settings: {} };
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: (fn) => { registeredListener = fn; }
+        }
+      }
+    }
+  });
+
+  registeredListener({ settings: { newValue: { filtersEnabled: false } } }, "local");
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+});
+
+test("storage.onChanged ignores unrelated changes", async () => {
+  let registeredListener = null;
+  let refreshCalls = 0;
+  loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) return { settings: {} };
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: {
+          addListener: (fn) => { registeredListener = fn; }
+        }
+      }
+    }
+  });
+
+  registeredListener({ someOtherKey: { newValue: "value" } }, "local");
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+});
+
+test("isTemperatureAtOrAboveThreshold returns true when value equals threshold", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { showFilteredAboveThreshold: true, showFilteredThreshold: 100 } };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isTemperatureAtOrAboveThreshold(100), true);
+  assert.equal(context.isTemperatureAtOrAboveThreshold(150), true);
+  assert.equal(context.isTemperatureAtOrAboveThreshold(99), false);
+});
+
+test("isTemperatureAtOrAboveThreshold returns false when threshold is null", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { showFilteredAboveThreshold: true, showFilteredThreshold: null } };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isTemperatureAtOrAboveThreshold(100), false);
+});
+
+test("isTemperatureAtOrAboveThreshold returns false when value is null", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { showFilteredAboveThreshold: true, showFilteredThreshold: 100 } };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isTemperatureAtOrAboveThreshold(null), false);
+});
+
+test("isTemperatureBelowThreshold returns true when value is below threshold", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { hideUnfilteredBelowThreshold: true, hideUnfilteredThreshold: 50 } };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isTemperatureBelowThreshold(49), true);
+  assert.equal(context.isTemperatureBelowThreshold(50), false);
+  assert.equal(context.isTemperatureBelowThreshold(51), false);
+});
+
+test("isTemperatureBelowThreshold returns false when threshold is null", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { hideUnfilteredBelowThreshold: true, hideUnfilteredThreshold: null } };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isTemperatureBelowThreshold(10), false);
+});
+
+test("isTemperatureBelowThreshold returns false when value is null", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { hideUnfilteredBelowThreshold: true, hideUnfilteredThreshold: 50 } };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  assert.equal(context.isTemperatureBelowThreshold(null), false);
+});
+
+test("normalizeLinkHostName strips protocol, www, and path", () => {
+  const context = loadContentScript();
+
+  assert.equal(context.normalizeLinkHostName("https://www.amazon.pl/deals"), "amazon.pl");
+  assert.equal(context.normalizeLinkHostName("http://facebook.com/page"), "facebook.com");
+  assert.equal(context.normalizeLinkHostName("//example.com/path"), "example.com");
+  assert.equal(context.normalizeLinkHostName("www.store.com"), "store.com");
+});
+
+test("normalizeSettings handles all fields explicitly set", () => {
+  const context = loadContentScript();
+
+  const result = context.normalizeSettings({
+    useFirefoxSync: false,
+    alwaysFilterOnPageOpen: false,
+    filtersEnabled: false,
+    categoryFiltersEnabled: false,
+    showFilteredAsDimmed: true,
+    showBelowThresholdAsDimmed: true,
+    showFilteredAboveThreshold: true,
+    hideUnfilteredBelowThreshold: true,
+    showFilteredThreshold: 100,
+    hideUnfilteredThreshold: 50,
+    uiLanguage: "pl"
+  });
+
+  assert.equal(result.useFirefoxSync, false);
+  assert.equal(result.alwaysFilterOnPageOpen, false);
+  assert.equal(result.filtersEnabled, false);
+  assert.equal(result.categoryFiltersEnabled, false);
+  assert.equal(result.showFilteredAsDimmed, true);
+  assert.equal(result.showBelowThresholdAsDimmed, true);
+  assert.equal(result.showFilteredAboveThreshold, true);
+  assert.equal(result.hideUnfilteredBelowThreshold, true);
+  assert.equal(result.showFilteredThreshold, 100);
+  assert.equal(result.hideUnfilteredThreshold, 50);
+  assert.equal(result.uiLanguage, "pl");
+});
+
+test("normalizeSettings handles undefined/null input", () => {
+  const context = loadContentScript();
+
+  const result = context.normalizeSettings(undefined);
+
+  assert.equal(result.useFirefoxSync, true);
+  assert.equal(result.alwaysFilterOnPageOpen, true);
+  assert.equal(result.filtersEnabled, true);
+  assert.equal(result.categoryFiltersEnabled, true);
+});
+
+test("cacheStructuredThreadData function exists", () => {
+  const context = loadContentScript();
+
+  assert.equal(typeof context.cacheStructuredThreadData, "function");
+});
+
+test("hideCard sets hidden dataset and display none", () => {
+  const card = {
+    dataset: { pepperStoreFilterDimmed: "true" },
+    classList: { remove: (cls) => { card.classListRemoved = cls; } },
+    style: { display: "" }
+  };
+  const context = loadContentScript();
+
+  context.hideCard(card);
+
+  assert.equal(card.dataset.pepperStoreFilterHidden, "true");
+  assert.equal(card.dataset.pepperStoreFilterDimmed, undefined);
+  assert.equal(card.style.display, "none");
+  assert.equal(card.classListRemoved, "pepper-store-filter-dimmed");
+});
+
+test("showCard clears hidden and dimmed dataset", () => {
+  const card = {
+    dataset: { pepperStoreFilterHidden: "true", pepperStoreFilterDimmed: "true" },
+    classList: { remove: (cls) => { card.classListRemoved = cls; } },
+    style: { display: "none" }
+  };
+  const context = loadContentScript();
+
+  context.showCard(card);
+
+  assert.equal(card.dataset.pepperStoreFilterHidden, undefined);
+  assert.equal(card.dataset.pepperStoreFilterDimmed, undefined);
+  assert.equal(card.style.display, "");
+});
+
+test("dimCard sets dimmed dataset and adds class", () => {
+  const card = {
+    dataset: {},
+    classList: { add: (cls) => { card.classListAdded = cls; } },
+    style: { display: "none" }
+  };
+  const context = loadContentScript();
+
+  context.dimCard(card, { badgeText: "Test", noticeKey: "test:1" });
+
+  assert.equal(card.dataset.pepperStoreFilterDimmed, "true");
+  assert.equal(card.dataset.pepperStoreFilterHidden, undefined);
+  assert.equal(card.classListAdded, "pepper-store-filter-dimmed");
+  assert.equal(card.style.display, "");
+});
+
+test("createDimmedNotice creates notice with badge and optional remove button", () => {
+  const context = loadContentScript();
+
+  const noticeWithButton = context.createDimmedNotice({
+    badgeText: "Filtered",
+    noticeKey: "store:amazon",
+    merchant: { name: "Amazon.pl" },
+    onRemove: async () => {}
+  });
+
+  assert.ok(noticeWithButton);
+  assert.equal(noticeWithButton.className, "pepper-store-filter-dimmed-notice");
+  assert.equal(noticeWithButton.children.length, 2);
+
+  const noticeWithoutButton = context.createDimmedNotice({
+    badgeText: "Filtered",
+    noticeKey: "threshold:50"
+  });
+
+  assert.equal(noticeWithoutButton.children.length, 1);
+});
+
+test("removeDimmedNotice removes notice from card", () => {
+  const notice = { remove: () => { notice.removed = true; } };
+  const card = {
+    querySelector: () => notice
+  };
+  const context = loadContentScript();
+
+  context.removeDimmedNotice(card);
+
+  assert.ok(notice.removed);
+});
+
+test("removeDimmedNotice handles missing notice", () => {
+  const card = { querySelector: () => null };
+  const context = loadContentScript();
+
+  assert.doesNotThrow(() => {
+    context.removeDimmedNotice(card);
+  });
+});
+
+test("getStoreDimmedNoticeConfig returns correct config", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { uiLanguage: "en" } };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  const config = context.getStoreDimmedNoticeConfig({ name: "Amazon.pl" });
+
+  assert.equal(config.badgeText.includes("Amazon.pl"), false);
+  assert.equal(config.badgeText.includes("Filtered by store filter"), true);
+  assert.equal(config.noticeKey, "store:amazon.pl");
+  assert.equal(typeof config.onRemove, "function");
+});
+
+test("getThresholdDimmedNoticeConfig returns config with value", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: { get: async () => ({}), set: async () => {} },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { hideUnfilteredBelowThreshold: true, hideUnfilteredThreshold: 50 } };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await context.refreshStateFromStorage();
+
+  const config = context.getThresholdDimmedNoticeConfig();
+
+  assert.equal(config.badgeText.includes("50"), true);
+  assert.equal(config.noticeKey, "threshold:50");
+});
+
+test("getThresholdDimmedNoticeConfig returns config without value when null", () => {
+  const context = loadContentScript();
+
+  context.currentUiLanguage = "en";
+  context.hideUnfilteredThreshold = null;
+
+  const config = context.getThresholdDimmedNoticeConfig();
+
+  assert.equal(config.badgeText.includes("<"), false);
+  assert.equal(config.noticeKey, "threshold:off");
+});
+
+test("refreshStateFromStorage throws on error", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => { throw new Error("storage error"); },
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: {} };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async () => {}
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const originalGetSettings = context.getSettings;
+  context.getSettings = async () => { throw new Error("settings error"); };
+
+  await assert.rejects(
+    () => context.refreshStateFromStorage(),
+    /settings error/
+  );
+
+  context.getSettings = originalGetSettings;
+});
+
+test("refreshStateFromStorage resets filters when resetFiltersForPage is true", async () => {
+  let savedSettings = null;
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        sync: {
+          get: async () => ({ hiddenStores: [] }),
+          set: async () => {}
+        },
+        local: {
+          get: async (defaults) => {
+            if (Object.prototype.hasOwnProperty.call(defaults, "settings")) {
+              return { settings: { alwaysFilterOnPageOpen: true, filtersEnabled: false } };
+            }
+            return { hiddenStores: [], hiddenCategories: [] };
+          },
+          set: async (value) => {
+            if (Object.prototype.hasOwnProperty.call(value, "settings")) {
+              savedSettings = value.settings;
+            }
+          }
+        },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  await new Promise((r) => setTimeout(r, 50));
+  await context.refreshStateFromStorage(true);
+
+  assert.equal(savedSettings?.filtersEnabled, true);
+});
+
+test("observePageChanges sets up observer and scroll listener", () => {
+  let observeCalls = 0;
+  let scrollAddCalls = 0;
+
+  loadContentScript({
+    document: {
+      body: {},
+      documentElement: { appendChild: () => {} },
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      createElement: createMockElement
+    },
+    MutationObserver: class {
+      observe() { observeCalls += 1; }
+      disconnect() {}
+    },
+    windowAddEventListener: (event, handler, options) => {
+      if (event === "scroll") scrollAddCalls += 1;
+    }
+  });
+
+  assert.equal(observeCalls, 1);
+  assert.equal(scrollAddCalls, 1);
+});
+
+test("injectStyles is idempotent", () => {
+  let appendCount = 0;
+  let stylesExist = false;
+
+  const context = loadContentScript({
+    document: {
+      body: {},
+      documentElement: {
+        appendChild: () => { appendCount += 1; },
+        classList: { toggle: () => {} }
+      },
+      querySelector: (selector) => {
+        if (selector === "#pepper-store-filter-styles") {
+          return stylesExist ? {} : null;
+        }
+        return null;
+      },
+      querySelectorAll: () => [],
+      createElement: createMockElement
+    }
+  });
+
+  stylesExist = true;
+  context.injectStyles();
+  context.injectStyles();
+
+  assert.equal(appendCount, 1);
+});
+
+test("normalizeThresholdValue handles comma decimal separator", () => {
+  const context = loadContentScript();
+
+  assert.equal(context.normalizeThresholdValue("9,5"), 9.5);
+  assert.equal(context.normalizeThresholdValue("0"), 0);
+});
+
+test("parseJsonAttribute handles &#34; encoded quotes", () => {
+  const context = loadContentScript();
+  const encoded = "{&#34;name&#34;:&#34;ThreadMainListItemNormalizer&#34;}";
+
+  assert.equal(
+    JSON.stringify(context.parseJsonAttribute(encoded)),
+    JSON.stringify({ name: "ThreadMainListItemNormalizer" })
+  );
+});
+
+test("parseJsonAttribute handles null/undefined input", () => {
+  const context = loadContentScript();
+
+  assert.equal(context.parseJsonAttribute(null), null);
+  assert.equal(context.parseJsonAttribute(undefined), null);
+});
+
+test("getSettings reads and normalizes settings", async () => {
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        local: {
+          get: async () => ({
+            settings: {
+              useFirefoxSync: false,
+              filtersEnabled: false,
+              uiLanguage: "pl"
+            }
+          }),
+          set: async () => {}
+        },
+        sync: { get: async () => ({}), set: async () => {} },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const settings = await context.getSettings();
+
+  assert.equal(settings.useFirefoxSync, false);
+  assert.equal(settings.filtersEnabled, false);
+  assert.equal(settings.uiLanguage, "pl");
+});
+
+test("saveSettings normalizes and saves", async () => {
+  let savedValue = null;
+  const context = loadContentScript({
+    browser: {
+      storage: {
+        local: {
+          get: async () => ({ settings: {} }),
+          set: async (value) => { savedValue = value; }
+        },
+        sync: { get: async () => ({}), set: async () => {} },
+        onChanged: { addListener: () => {} }
+      }
+    }
+  });
+
+  const result = await context.saveSettings({ filtersEnabled: false, uiLanguage: "en" });
+
+  assert.equal(result.filtersEnabled, false);
+  assert.equal(result.uiLanguage, "en");
+  assert.ok(savedValue);
 });

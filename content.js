@@ -116,6 +116,7 @@ let currentUiLanguage = "en";
 let lastDebugSignature = "";
 let applyFiltersTimer = null;
 const threadDataCache = new Map();
+const THREAD_DATA_CACHE_MAX_SIZE = 500;
 
 function isDebugEnabled() {
   try {
@@ -535,6 +536,11 @@ function cacheStructuredThreadData(card, thread) {
     return;
   }
 
+  if (threadDataCache.size >= THREAD_DATA_CACHE_MAX_SIZE) {
+    const firstKey = threadDataCache.keys().next().value;
+    threadDataCache.delete(firstKey);
+  }
+
   const previousRecord = threadDataCache.get(nextRecord.threadId) || null;
   threadDataCache.set(
     nextRecord.threadId,
@@ -753,7 +759,11 @@ function createDimmedNotice({ badgeText, noticeKey, merchant = null, onRemove = 
       event.stopPropagation();
       event.stopImmediatePropagation();
 
-      await onRemove();
+      try {
+        await onRemove();
+      } catch (error) {
+        debugLog("Error removing filter", error);
+      }
     });
 
     notice.appendChild(button);
@@ -927,16 +937,20 @@ function createStoreFilterButton(merchant) {
     event.stopPropagation();
     event.stopImmediatePropagation();
 
-    const shouldAddStore = window.confirm(
-      t("addStoreConfirm", { name: merchant.name })
-    );
+    try {
+      const shouldAddStore = window.confirm(
+        t("addStoreConfirm", { name: merchant.name })
+      );
 
-    if (!shouldAddStore) {
-      return;
+      if (!shouldAddStore) {
+        return;
+      }
+
+      hiddenStores = await saveHiddenStore(merchant.name);
+      applyFilters();
+    } catch (error) {
+      debugLog("Error adding store filter", error);
     }
-
-    hiddenStores = await saveHiddenStore(merchant.name);
-    applyFilters();
   });
 
   return button;
@@ -959,16 +973,20 @@ function createCategoryFilterButton(category) {
     event.stopPropagation();
     event.stopImmediatePropagation();
 
-    const shouldAddCategory = window.confirm(
-      t("addCategoryConfirm", { name: category.name })
-    );
+    try {
+      const shouldAddCategory = window.confirm(
+        t("addCategoryConfirm", { name: category.name })
+      );
 
-    if (!shouldAddCategory) {
-      return;
+      if (!shouldAddCategory) {
+        return;
+      }
+
+      hiddenCategories = await saveHiddenCategory(category.name);
+      applyFilters();
+    } catch (error) {
+      debugLog("Error adding category filter", error);
     }
-
-    hiddenCategories = await saveHiddenCategory(category.name);
-    applyFilters();
   });
 
   return button;
@@ -1348,27 +1366,32 @@ function injectStyles() {
 }
 
 async function refreshStateFromStorage(resetFiltersForPage = false) {
-  let settings = await getSettings();
+  try {
+    let settings = await getSettings();
 
-  if (resetFiltersForPage && settings.alwaysFilterOnPageOpen && !settings.filtersEnabled) {
-    settings = await saveSettings({
-      ...settings,
-      filtersEnabled: true
-    });
+    if (resetFiltersForPage && settings.alwaysFilterOnPageOpen && !settings.filtersEnabled) {
+      settings = await saveSettings({
+        ...settings,
+        filtersEnabled: true
+      });
+    }
+
+    filtersEnabled = settings.filtersEnabled;
+    categoryFiltersEnabled = settings.categoryFiltersEnabled;
+    showFilteredAsDimmed = settings.showFilteredAsDimmed;
+    showBelowThresholdAsDimmed = settings.showBelowThresholdAsDimmed;
+    showFilteredAboveThreshold = settings.showFilteredAboveThreshold;
+    hideUnfilteredBelowThreshold = settings.hideUnfilteredBelowThreshold;
+    showFilteredThreshold = settings.showFilteredThreshold;
+    hideUnfilteredThreshold = settings.hideUnfilteredThreshold;
+    currentUiLanguage = resolvePageUiLanguage(settings);
+    hiddenStores = await getStoredHiddenStores(settings);
+    hiddenCategories = await getStoredHiddenCategories(settings);
+    applyFilters();
+  } catch (error) {
+    debugLog("Error refreshing filter state from storage", error);
+    throw error;
   }
-
-  filtersEnabled = settings.filtersEnabled;
-  categoryFiltersEnabled = settings.categoryFiltersEnabled;
-  showFilteredAsDimmed = settings.showFilteredAsDimmed;
-  showBelowThresholdAsDimmed = settings.showBelowThresholdAsDimmed;
-  showFilteredAboveThreshold = settings.showFilteredAboveThreshold;
-  hideUnfilteredBelowThreshold = settings.hideUnfilteredBelowThreshold;
-  showFilteredThreshold = settings.showFilteredThreshold;
-  hideUnfilteredThreshold = settings.hideUnfilteredThreshold;
-  currentUiLanguage = resolvePageUiLanguage(settings);
-  hiddenStores = await getStoredHiddenStores(settings);
-  hiddenCategories = await getStoredHiddenCategories(settings);
-  applyFilters();
 }
 
 async function loadHiddenStores() {
@@ -1393,8 +1416,20 @@ function observePageChanges() {
   }
 
   let debounceTimer = null;
+  let observer = null;
 
-  const observer = new MutationObserver(() => {
+  const cleanup = () => {
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
+    window.removeEventListener?.("scroll", scheduleFollowUpScans);
+    clearTimeout(debounceTimer);
+  };
+
+  cleanup();
+
+  observer = new MutationObserver(() => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(scheduleFollowUpScans, 150);
   });
@@ -1409,8 +1444,6 @@ function observePageChanges() {
   window.addEventListener("scroll", scheduleFollowUpScans, {
     passive: true
   });
-
-  document.addEventListener?.("scroll", scheduleFollowUpScans, true);
 }
 
 browser.storage.onChanged.addListener((changes, areaName) => {
@@ -1424,10 +1457,11 @@ browser.storage.onChanged.addListener((changes, areaName) => {
     return;
   }
 
-  refreshStateFromStorage().then(() => {
-    debugLog("Filter state changed", {
-      filtersEnabled,
-      showFilteredAsDimmed,
+  refreshStateFromStorage()
+    .then(() => {
+      debugLog("Filter state changed", {
+        filtersEnabled,
+        showFilteredAsDimmed,
         showFilteredAboveThreshold,
         hideUnfilteredBelowThreshold,
         showFilteredThreshold,
@@ -1436,7 +1470,10 @@ browser.storage.onChanged.addListener((changes, areaName) => {
         hiddenCategories,
         categoryFiltersEnabled
       });
-  });
+    })
+    .catch((error) => {
+      debugLog("Error refreshing filter state on storage change", error);
+    });
 });
 
 browser.runtime?.onMessage?.addListener((message) => {
@@ -1448,7 +1485,10 @@ browser.runtime?.onMessage?.addListener((message) => {
   }
 
   if (message?.type === "dealStoreFilterRefresh") {
-    return refreshStateFromStorage();
+    return refreshStateFromStorage().catch((error) => {
+      debugLog("Error refreshing filters on message", error);
+      throw error;
+    });
   }
 
   return undefined;
