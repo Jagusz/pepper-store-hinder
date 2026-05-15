@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.0
+
 ### Zmieniono
 
 - Dodano cache ustrukturyzowanych danych oferty z list Peppera, dzięki czemu rozszerzenie może zachować sklep i kategorię także po przebudowie pierwszych kart na listach ofert.

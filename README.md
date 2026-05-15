@@ -4,15 +4,12 @@
 
 [Lista zmian](CHANGELOG.pl.md)
 
-## Co nowego w 0.2.0
+## Co nowego w 0.3.0
 
-- Dodano widok ustawień w popupie.
-- Dodano przełącznik `Disable filters` / `Enable filters`, który tymczasowo włącza lub wyłącza filtrowanie bez usuwania zapisanej listy sklepów.
-- Dodano ustawienie `Firefox Sync`, które pozwala wybrać zapis przez Firefox Sync albo zapis tylko lokalny na bieżącym urządzeniu.
-- Dodano ustawienie `Always filter when opening a page`, które automatycznie przywraca filtrowanie po otwarciu obsługiwanej strony.
-- Dodano ustawienie `Show filtered deals as compact previews`, które pokazuje przefiltrowane oferty jako kompaktowy podgląd zamiast całkowicie je ukrywać.
-- Kompaktowy podgląd pokazuje komunikat `Filtered by Deal Store Filter` oraz przycisk `Remove filter` usuwający dany sklep z listy filtrów.
-- Zmiany listy filtrów i ustawień próbują odświeżyć aktywną kartę od razu, jeśli działa na niej content script rozszerzenia.
+- Dodano cache ustrukturyzowanych danych oferty z list Peppera, dzięki czemu rozszerzenie może zachować sklep i kategorię także po przebudowie pierwszych kart na listach ofert.
+- Uszczelniono parser listy ofert, żeby nie wpadał zbyt wcześnie w tekstowy fallback na kartach, które mają już `ThreadMainListItemNormalizer`, ale nie skończyły jeszcze hydratacji.
+- Content script startuje teraz na `document_start` i zaczyna obserwować DOM także wtedy, gdy `body` nie zostało jeszcze utworzone, co poprawia obsługę pierwszych kart na listach ofert.
+- Rozszerzono testy o odczyt kategorii Peppera, oferty z samą kategorią, uzupełnianie brakującego przycisku oraz ponowne użycie zcache'owanych danych po zmianach DOM, w tym o przypadek, gdy przycisk kategorii nie pojawia się przy pierwszym renderze.
 
 Nieoficjalne rozszerzenie do Firefoksa, które pozwala ukrywać oferty z wybranych sklepów na obsługiwanych stronach z promocjami.
 

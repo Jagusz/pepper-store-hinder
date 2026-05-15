@@ -4,15 +4,12 @@
 
 [Changelog](CHANGELOG.md)
 
-## What's New In 0.2.0
+## What's New In 0.3.0
 
-- Added a settings view in the popup.
-- Added a `Disable filters` / `Enable filters` toggle for temporarily turning filtering on or off without clearing the saved store list.
-- Added a `Firefox Sync` setting for choosing between Firefox Sync storage and local-only storage on the current device.
-- Added an `Always filter when opening a page` setting that restores filtering automatically when a supported page opens.
-- Added a `Show filtered deals as compact previews` setting that keeps filtered deals visible as compact previews instead of hiding them completely.
-- Compact previews show a `Filtered by Deal Store Filter` notice and a `Remove filter` button for removing that store from the filter list.
-- Store-list and settings changes try to refresh the active tab immediately when the extension content script is available on that tab.
+- Added a structured thread-data cache for Pepper listing cards so the extension can keep the store and category after the page re-renders the first deals on listing pages.
+- Tightened the listing parser to avoid using an early text-only fallback on cards that already expose `ThreadMainListItemNormalizer` but have not finished hydrating yet.
+- The content script now starts at `document_start` and begins observing the DOM even before `body` exists, which improves handling of the first cards on listing pages.
+- Expanded tests to cover Pepper category parsing, category-only deals, partial button recovery, cached normalizer reuse after DOM updates, and the case where the category button is missing on the first render.
 
 An unofficial Firefox extension that lets you hide deals from selected stores on supported shopping and deal websites.
 

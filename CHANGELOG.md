@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.0
+
 ### Changed
 
 - Added a structured thread-data cache for Pepper listing cards so the extension can keep the store and category after the page re-renders the first deals on listing pages.
